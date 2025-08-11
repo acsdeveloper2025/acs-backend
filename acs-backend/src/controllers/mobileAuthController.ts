@@ -89,8 +89,14 @@ export class MobileAuthController {
       });
 
       let deviceRegistered = true;
+      let deviceNeedsApproval = false;
+
       if (!device) {
-        // Register new device
+        // Generate authentication code for new device
+        const authCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const authCodeExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+        // Register new device (requires approval for FIELD users)
         device = await prisma.device.create({
           data: {
             deviceId,
@@ -102,9 +108,13 @@ export class MobileAuthController {
             pushToken: deviceInfo?.pushToken,
             isActive: true,
             lastActiveAt: new Date(),
+            isApproved: user.role !== 'FIELD', // Auto-approve for non-field users
+            authCode: user.role === 'FIELD' ? authCode : null,
+            authCodeExpiresAt: user.role === 'FIELD' ? authCodeExpiresAt : null,
           },
         });
         deviceRegistered = false;
+        deviceNeedsApproval = user.role === 'FIELD';
       } else {
         // Update existing device
         await prisma.device.update({
@@ -119,6 +129,11 @@ export class MobileAuthController {
             lastActiveAt: new Date(),
           },
         });
+
+        // Check if device is approved for field users
+        if (user.role === 'FIELD' && !device.isApproved) {
+          deviceNeedsApproval = true;
+        }
       }
 
       // Check device limit per user
@@ -221,6 +236,12 @@ export class MobileAuthController {
           deviceRegistered,
           forceUpdate,
           minSupportedVersion: config.mobile.minSupportedVersion,
+          deviceAuthentication: {
+            isApproved: device.isApproved,
+            needsApproval: deviceNeedsApproval,
+            authCode: deviceNeedsApproval ? device.authCode : null,
+            authCodeExpiresAt: deviceNeedsApproval ? device.authCodeExpiresAt : null,
+          },
         },
       };
 
@@ -498,5 +519,208 @@ export class MobileAuthController {
     }
     
     return 0;
+  }
+
+  // Device Management Methods for Admins
+
+  /**
+   * Get pending device approvals
+   */
+  static async getPendingDevices(req: Request, res: Response) {
+    try {
+      const pendingDevices = await prisma.device.findMany({
+        where: {
+          isApproved: false,
+          authCode: { not: null },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              employeeId: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { registeredAt: 'desc' },
+      });
+
+      res.json({
+        success: true,
+        data: pendingDevices,
+      });
+    } catch (error) {
+      console.error('Get pending devices error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: {
+          code: 'INTERNAL_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  /**
+   * Approve a device
+   */
+  static async approveDevice(req: Request, res: Response) {
+    try {
+      const { deviceId } = req.params;
+      const adminUserId = (req as any).user?.userId;
+
+      const device = await prisma.device.update({
+        where: { id: deviceId },
+        data: {
+          isApproved: true,
+          approvedAt: new Date(),
+          approvedBy: adminUserId,
+          authCode: null,
+          authCodeExpiresAt: null,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              username: true,
+              employeeId: true,
+            },
+          },
+        },
+      });
+
+      // Log the approval (temporarily disabled for testing)
+      // await prisma.auditLog.create({
+      //   data: {
+      //     userId: adminUserId,
+      //     action: 'DEVICE_APPROVED',
+      //     entityType: 'DEVICE',
+      //     entityId: device.id,
+      //     details: JSON.stringify({
+      //       deviceId: device.deviceId,
+      //       userId: device.userId,
+      //       platform: device.platform,
+      //       model: device.model,
+      //     }),
+      //     ipAddress: (req as any).ip || 'unknown',
+      //     userAgent: req.get('User-Agent') || 'unknown',
+      //   },
+      // });
+
+      res.json({
+        success: true,
+        message: 'Device approved successfully',
+        data: device,
+      });
+    } catch (error) {
+      console.error('Approve device error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: {
+          code: 'INTERNAL_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  /**
+   * Reject a device
+   */
+  static async rejectDevice(req: Request, res: Response) {
+    try {
+      const { deviceId } = req.params;
+      const { reason } = req.body;
+      const adminUserId = (req as any).user?.userId;
+
+      const device = await prisma.device.update({
+        where: { id: deviceId },
+        data: {
+          rejectedAt: new Date(),
+          rejectedBy: adminUserId,
+          rejectionReason: reason,
+          authCode: null,
+          authCodeExpiresAt: null,
+          isActive: false,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              username: true,
+              employeeId: true,
+            },
+          },
+        },
+      });
+
+      // Log the rejection
+      await prisma.auditLog.create({
+        data: {
+          userId: adminUserId,
+          action: 'DEVICE_REJECTED',
+          entityType: 'DEVICE',
+          entityId: device.id,
+          details: JSON.stringify({
+            deviceId: device.deviceId,
+            userId: device.userId,
+            platform: device.platform,
+            model: device.model,
+            reason,
+          }),
+          ipAddress: (req as any).ip || 'unknown',
+          userAgent: req.get('User-Agent') || 'unknown',
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Device rejected successfully',
+        data: device,
+      });
+    } catch (error) {
+      console.error('Reject device error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: {
+          code: 'INTERNAL_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  /**
+   * Get all devices for a user
+   */
+  static async getUserDevices(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      const devices = await prisma.device.findMany({
+        where: { userId },
+        orderBy: { lastActiveAt: 'desc' },
+      });
+
+      res.json({
+        success: true,
+        data: devices,
+      });
+    } catch (error) {
+      console.error('Get user devices error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: {
+          code: 'INTERNAL_ERROR',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
   }
 }

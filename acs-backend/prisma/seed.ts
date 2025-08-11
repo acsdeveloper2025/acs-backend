@@ -1,4 +1,4 @@
-import { PrismaClient, Role, CaseStatus, Platform } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -14,13 +14,14 @@ async function main() {
     create: {
       name: 'System Administrator',
       username: 'admin',
+      password: 'admin123',
       passwordHash: adminPasswordHash,
       employeeId: 'EMP001',
       designation: 'System Administrator',
       department: 'IT',
       phone: '+91-9876543210',
       email: 'admin@acs.com',
-      role: Role.ADMIN,
+      role: 'ADMIN',
     },
   });
 
@@ -34,13 +35,14 @@ async function main() {
     create: {
       name: 'John Doe',
       username: 'field001',
+      password: 'field123',
       passwordHash: fieldPasswordHash,
       employeeId: 'EMP002',
       designation: 'Field Executive',
       department: 'Operations',
       phone: '+91-9876543211',
       email: 'john.doe@acs.com',
-      role: Role.FIELD,
+      role: 'FIELD',
     },
   });
 
@@ -54,13 +56,14 @@ async function main() {
     create: {
       name: 'Jane Smith',
       username: 'backend001',
+      password: 'backend123',
       passwordHash: backendPasswordHash,
       employeeId: 'EMP003',
       designation: 'Backend Executive',
       department: 'Operations',
       phone: '+91-9876543212',
       email: 'jane.smith@acs.com',
-      role: Role.BACKEND,
+      role: 'BACKEND',
     },
   });
 
@@ -131,7 +134,7 @@ async function main() {
       addressPincode: '122001',
       latitude: 28.4595,
       longitude: 77.0266,
-      status: CaseStatus.ASSIGNED,
+      status: 'ASSIGNED',
       verificationType: 'Residence Verification',
       assignedToId: fieldUser.id,
       clientId: client.id,
@@ -149,7 +152,7 @@ async function main() {
     update: {},
     create: {
       deviceId: 'DEV001',
-      platform: Platform.ANDROID,
+      platform: 'ANDROID',
       model: 'Samsung Galaxy S21',
       osVersion: '13.0',
       appVersion: '1.0.0',
@@ -164,10 +167,10 @@ async function main() {
     data: {
       userId: admin.id,
       action: 'SEED_DATABASE',
-      details: {
+      details: JSON.stringify({
         message: 'Database seeded with initial data',
         timestamp: new Date().toISOString(),
-      },
+      }),
     },
   });
 
