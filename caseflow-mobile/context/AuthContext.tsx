@@ -84,13 +84,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // Call authentication service
+      console.log('🔐 AuthContext: Calling authService.login...');
       const response = await authService.login(username, password);
+      console.log('🔐 AuthContext: Login response:', response);
 
       if (response.success && response.data) {
         // Update context state
+        console.log('🔐 AuthContext: Setting user and authenticated state...');
         setUser(response.data.user);
         setIsAuthenticated(true);
         setIsLoading(false);
+        console.log('🔐 AuthContext: Authentication state updated successfully');
         return { success: true };
       } else {
         setIsLoading(false);

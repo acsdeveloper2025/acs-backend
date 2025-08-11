@@ -7,6 +7,10 @@ export default defineConfig(({ mode }) => {
     const isProduction = mode === 'production';
 
     return {
+      server: {
+        port: 5174,
+        host: true
+      },
       plugins: [
         react({
           jsxRuntime: 'automatic'

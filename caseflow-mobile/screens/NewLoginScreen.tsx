@@ -44,15 +44,20 @@ const NewLoginScreen: React.FC = () => {
 
     try {
       // Call the updated login function
+      console.log('📱 LoginScreen: Calling login with credentials...');
       const result = await login(username, password);
+      console.log('📱 LoginScreen: Login result:', result);
 
       if (!result.success) {
+        console.log('📱 LoginScreen: Login failed:', result.error);
         Alert.alert('Authentication Failed', result.error || 'Invalid credentials. Please try again.');
+      } else {
+        console.log('📱 LoginScreen: Login successful, waiting for navigation...');
       }
       // If successful, the AuthContext will handle the navigation
     } catch (error) {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-      console.error('Login error:', error);
+      console.error('📱 LoginScreen: Login error:', error);
     } finally {
       setIsLoading(false);
     }

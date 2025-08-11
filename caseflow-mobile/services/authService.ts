@@ -153,7 +153,7 @@ class AuthService {
         deviceInfo,
       };
 
-      const response = await fetch(`${this.apiConfig.baseUrl}/auth/login`, {
+      const response = await fetch(`${this.apiConfig.baseUrl}/mobile/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -247,7 +247,7 @@ class AuthService {
         return null;
       }
 
-      const response = await fetch(`${this.apiConfig.baseUrl}/auth/refresh`, {
+      const response = await fetch(`${this.apiConfig.baseUrl}/mobile/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
