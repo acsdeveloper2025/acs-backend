@@ -68,8 +68,8 @@ export interface EnvironmentConfig {
 // Default configuration
 const defaultConfig: EnvironmentConfig = {
   api: {
-    baseUrl: 'http://localhost:3001/api',
-    wsUrl: 'ws://localhost:3001',
+    baseUrl: 'http://localhost:3000/api',
+    wsUrl: 'ws://localhost:3000',
     timeout: 30000,
   },
   auth: {
