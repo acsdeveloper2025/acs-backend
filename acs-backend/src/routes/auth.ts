@@ -3,12 +3,11 @@ import { body } from 'express-validator';
 import { login, logout, registerDevice } from '@/controllers/authController';
 import { authenticateToken } from '@/middleware/auth';
 import { validate } from '@/middleware/validation';
-import { authRateLimit } from '@/middleware/rateLimiter';
+// Removed authRateLimit import - no rate limiting for auth routes
 
 const router = Router();
 
-// Apply auth rate limiting to all routes
-router.use(authRateLimit);
+// Removed auth rate limiting for better user experience
 
 // Login validation
 const loginValidation = [

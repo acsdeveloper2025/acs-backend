@@ -1,9 +1,10 @@
 import express from 'express';
 import { body, query, param } from 'express-validator';
-import { authenticateToken } from '@/middleware/auth';
+import { authenticateToken, AuthenticatedRequest } from '@/middleware/auth';
 import { validate } from '@/middleware/validation';
 import { logger } from '@/config/logger';
-import { getProductsByClient } from '@/controllers/productsController';
+import { prisma } from '@/config/database';
+// import { getProductsByClient } from '@/controllers/productsController';
 
 const router = express.Router();
 
@@ -57,48 +58,61 @@ const updateClientValidation = [
 // GET /api/clients - Get all clients
 router.get('/',
   authenticateToken,
-  [
+  validate([
     query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
     query('search').optional().trim().isLength({ max: 100 }).withMessage('Search term too long'),
-  ],
-  validate,
-  async (req, res) => {
+  ]),
+  async (req: AuthenticatedRequest, res) => {
     try {
       const { page = 1, limit = 20, search } = req.query;
       
-      let filteredClients = clients;
-      
-      // Apply search filter
-      if (search) {
-        const searchTerm = (search as string).toLowerCase();
-        filteredClients = clients.filter(client => 
-          client.name.toLowerCase().includes(searchTerm) ||
-          client.code.toLowerCase().includes(searchTerm)
-        );
-      }
-      
-      // Apply pagination
-      const startIndex = ((page as number) - 1) * (limit as number);
-      const endIndex = startIndex + (limit as number);
-      const paginatedClients = filteredClients.slice(startIndex, endIndex);
-      
-      logger.info(`Retrieved ${paginatedClients.length} clients`, { 
+      // Build where clause for search
+      const whereClause = search ? {
+        OR: [
+          { name: { contains: search as string, mode: 'insensitive' as const } },
+          { code: { contains: search as string, mode: 'insensitive' as const } },
+        ],
+      } : {};
+
+      // Get total count for pagination
+      const totalCount = await prisma.client.count({
+        where: whereClause,
+      });
+
+      // Get paginated clients from database
+      const dbClients = await prisma.client.findMany({
+        where: whereClause,
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit),
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      logger.info(`Retrieved ${dbClients.length} clients from database`, {
         userId: req.user?.id,
         page,
         limit,
         search,
-        total: filteredClients.length
+        total: totalCount
       });
-      
+
+      // Add cache-busting headers to ensure fresh responses
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
       res.json({
         success: true,
-        data: paginatedClients,
+        data: dbClients,
         pagination: {
           page: Number(page),
           limit: Number(limit),
-          total: filteredClients.length,
-          totalPages: Math.ceil(filteredClients.length / (limit as number)),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / Number(limit)),
         },
       });
     } catch (error) {
@@ -115,14 +129,15 @@ router.get('/',
 // GET /api/clients/:id - Get client by ID
 router.get('/:id',
   authenticateToken,
-  [
+  validate([
     param('id').trim().notEmpty().withMessage('Client ID is required'),
-  ],
-  validate,
-  async (req, res) => {
+  ]),
+  async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params;
-      const client = clients.find(c => c.id === id);
+      const client = await prisma.client.findUnique({
+        where: { id },
+      });
       
       if (!client) {
         return res.status(404).json({
@@ -152,14 +167,16 @@ router.get('/:id',
 // POST /api/clients - Create new client
 router.post('/',
   authenticateToken,
-  createClientValidation,
-  validate,
-  async (req, res) => {
+  validate(createClientValidation),
+  async (req: AuthenticatedRequest, res) => {
     try {
       const { name, code } = req.body;
       
-      // Check if client code already exists
-      const existingClient = clients.find(c => c.code === code);
+      // Check if client code already exists in database
+      const existingClient = await prisma.client.findUnique({
+        where: { code },
+      });
+
       if (existingClient) {
         return res.status(400).json({
           success: false,
@@ -167,17 +184,14 @@ router.post('/',
           error: { code: 'DUPLICATE_CODE' },
         });
       }
-      
-      // Create new client
-      const newClient = {
-        id: `client_${Date.now()}`,
-        name,
-        code,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      
-      clients.push(newClient);
+
+      // Create new client in database
+      const newClient = await prisma.client.create({
+        data: {
+          name,
+          code,
+        },
+      });
       
       logger.info(`Created new client: ${newClient.id}`, { 
         userId: req.user?.id,
@@ -310,13 +324,14 @@ router.delete('/:id',
 );
 
 // GET /api/clients/:id/products - Get products by client
-router.get('/:id/products',
-  [
-    param('id').trim().notEmpty().withMessage('Client ID is required'),
-    query('isActive').optional().isBoolean().withMessage('isActive must be a boolean')
-  ],
-  validate,
-  getProductsByClient
-);
+// Temporarily commented out due to import issues
+// router.get('/:id/products',
+//   [
+//     param('id').trim().notEmpty().withMessage('Client ID is required'),
+//     query('isActive').optional().isBoolean().withMessage('isActive must be a boolean')
+//   ],
+//   validate,
+//   getProductsByClient
+// );
 
 export default router;

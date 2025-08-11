@@ -22,7 +22,7 @@ export const config = {
   redisPassword: process.env.REDIS_PASSWORD || '',
   
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
@@ -48,7 +48,7 @@ export const config = {
   apnsTeamId: process.env.APNS_TEAM_ID || '',
   
   // WebSocket
-  wsPort: parseInt(process.env.WS_PORT || '3001', 10),
+  wsPort: parseInt(process.env.WS_PORT || '3000', 10),
   wsCorsOrigin: process.env.WS_CORS_ORIGIN || '*',
   wsHeartbeatInterval: parseInt(process.env.WS_HEARTBEAT_INTERVAL || '30000', 10),
   wsConnectionTimeout: parseInt(process.env.WS_CONNECTION_TIMEOUT || '60000', 10),

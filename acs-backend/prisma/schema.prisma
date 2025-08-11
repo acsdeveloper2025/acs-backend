@@ -86,14 +86,25 @@ model Client {
 }
 
 model Product {
-  id        String   @id @default(uuid())
-  name      String
-  clientId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique @default("PROD_CODE")
+  description String?  @db.Text
+  category    String   @default("OTHER") // LOAN_VERIFICATION, EMPLOYMENT_VERIFICATION, etc.
+  clientId    String
+  isActive    Boolean  @default(true)
+
+  // Pricing information (stored as JSON string for SQL Server compatibility)
+  pricing     String?  @db.NVarChar(Max) // JSON string: { basePrice: number, currency: string, pricingModel: string }
+
+  // Verification types (stored as JSON string array)
+  verificationType String? @db.NVarChar(Max) // JSON string: ["RESIDENCE", "OFFICE", "BUSINESS", etc.]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTypes VerificationType[]
 
   @@map("products")

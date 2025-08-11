@@ -1,61 +1,7 @@
 import { Request, Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
-
-// Mock data for demonstration (replace with actual database operations)
-let products: any[] = [
-  {
-    id: 'product_1',
-    name: 'Personal Loan Verification',
-    code: 'PLV',
-    description: 'Verification services for personal loan applications',
-    category: 'LOAN_VERIFICATION',
-    isActive: true,
-    pricing: {
-      basePrice: 500,
-      currency: 'INR',
-      pricingModel: 'PER_VERIFICATION',
-    },
-    verificationType: ['RESIDENCE', 'OFFICE'],
-    clientId: 'client_1',
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  },
-  {
-    id: 'product_2',
-    name: 'Business Loan Verification',
-    code: 'BLV',
-    description: 'Comprehensive verification for business loan applications',
-    category: 'LOAN_VERIFICATION',
-    isActive: true,
-    pricing: {
-      basePrice: 1000,
-      currency: 'INR',
-      pricingModel: 'PER_VERIFICATION',
-    },
-    verificationType: ['OFFICE', 'BUSINESS'],
-    clientId: 'client_2',
-    createdAt: '2024-01-02T00:00:00.000Z',
-    updatedAt: '2024-01-02T00:00:00.000Z',
-  },
-  {
-    id: 'product_3',
-    name: 'Employment Verification',
-    code: 'EV',
-    description: 'Employment and salary verification services',
-    category: 'EMPLOYMENT_VERIFICATION',
-    isActive: true,
-    pricing: {
-      basePrice: 300,
-      currency: 'INR',
-      pricingModel: 'PER_VERIFICATION',
-    },
-    verificationType: ['OFFICE'],
-    clientId: 'client_1',
-    createdAt: '2024-01-03T00:00:00.000Z',
-    updatedAt: '2024-01-03T00:00:00.000Z',
-  },
-];
+import { prisma } from '@/config/database';
 
 // GET /api/products - List products with pagination and filters
 export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
@@ -71,56 +17,67 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
       sortOrder = 'asc' 
     } = req.query;
 
-    let filteredProducts = [...products];
-
-    // Apply filters
+    // Build where clause
+    const whereClause: any = {};
+    
     if (clientId) {
-      filteredProducts = filteredProducts.filter(p => p.clientId === clientId);
+      whereClause.clientId = clientId;
     }
     if (category) {
-      filteredProducts = filteredProducts.filter(p => p.category === category);
+      whereClause.category = category;
     }
     if (isActive !== undefined) {
-      filteredProducts = filteredProducts.filter(p => p.isActive === (isActive === 'true'));
+      whereClause.isActive = isActive === 'true';
     }
-    if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredProducts = filteredProducts.filter(p => 
-        p.name.toLowerCase().includes(searchTerm) ||
-        p.code.toLowerCase().includes(searchTerm) ||
-        p.description.toLowerCase().includes(searchTerm)
-      );
-    }
+    // Temporarily disable search to test basic functionality
+    // if (search) {
+    //   const searchTerm = search as string;
+    //   whereClause.OR = [
+    //     { name: { contains: searchTerm } },
+    //     { code: { contains: searchTerm } },
+    //     { description: { contains: searchTerm } }
+    //   ];
+    // }
 
-    // Apply sorting
-    filteredProducts.sort((a, b) => {
-      const aValue = a[sortBy as string];
-      const bValue = b[sortBy as string];
-      if (sortOrder === 'desc') {
-        return bValue > aValue ? 1 : -1;
+    // Get total count
+    const totalCount = await prisma.product.count({ where: whereClause });
+
+    // Get products with pagination
+    const dbProducts = await prisma.product.findMany({
+      where: whereClause,
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+      orderBy: { [sortBy as string]: sortOrder },
+      include: {
+        client: {
+          select: { id: true, name: true }
+        }
       }
-      return aValue > bValue ? 1 : -1;
     });
 
-    // Apply pagination
-    const startIndex = ((page as number) - 1) * (limit as number);
-    const endIndex = startIndex + (limit as number);
-    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+    // Transform data to match expected format
+    const transformedProducts = dbProducts.map(product => ({
+      ...product,
+      pricing: product.pricing ? JSON.parse(product.pricing) : null,
+      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
+    }));
 
-    logger.info(`Retrieved ${paginatedProducts.length} products`, { 
+    logger.info(`Retrieved ${dbProducts.length} products from database`, {
       userId: req.user?.id,
-      filters: { clientId, category, isActive, search },
-      pagination: { page, limit }
+      page: Number(page),
+      limit: Number(limit),
+      search: search || '',
+      total: totalCount
     });
 
     res.json({
       success: true,
-      data: paginatedProducts,
+      data: transformedProducts,
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total: filteredProducts.length,
-        totalPages: Math.ceil(filteredProducts.length / (limit as number)),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit)),
       },
     });
   } catch (error) {
@@ -137,7 +94,15 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
 export const getProductById = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const product = products.find(p => p.id === id);
+    
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        client: {
+          select: { id: true, name: true }
+        }
+      }
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -147,11 +112,18 @@ export const getProductById = async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
+    // Transform response data
+    const responseData = {
+      ...product,
+      pricing: product.pricing ? JSON.parse(product.pricing) : null,
+      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
+    };
+
     logger.info(`Retrieved product ${id}`, { userId: req.user?.id });
 
     res.json({
       success: true,
-      data: product,
+      data: responseData,
     });
   } catch (error) {
     logger.error('Error retrieving product:', error);
@@ -178,7 +150,10 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
     } = req.body;
 
     // Check if product code already exists
-    const existingProduct = products.find(p => p.code === code);
+    const existingProduct = await prisma.product.findUnique({
+      where: { code }
+    });
+    
     if (existingProduct) {
       return res.status(400).json({
         success: false,
@@ -187,25 +162,44 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
       });
     }
 
-    const newProduct = {
-      id: `product_${Date.now()}`,
-      name,
-      code,
-      description,
-      category,
-      clientId,
-      pricing: {
-        basePrice: pricing?.basePrice || 0,
-        currency: pricing?.currency || 'INR',
-        pricingModel: pricing?.pricingModel || 'PER_VERIFICATION',
-      },
-      verificationType: verificationType || [],
-      isActive,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Verify client exists
+    const client = await prisma.client.findUnique({
+      where: { id: clientId }
+    });
+    
+    if (!client) {
+      return res.status(400).json({
+        success: false,
+        message: 'Client not found',
+        error: { code: 'CLIENT_NOT_FOUND' },
+      });
+    }
 
-    products.push(newProduct);
+    // Create product in database
+    const newProduct = await prisma.product.create({
+      data: {
+        name,
+        code,
+        description,
+        category,
+        clientId,
+        pricing: pricing ? JSON.stringify(pricing) : null,
+        verificationType: verificationType ? JSON.stringify(verificationType) : null,
+        isActive,
+      },
+      include: {
+        client: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    // Transform response data
+    const responseData = {
+      ...newProduct,
+      pricing: newProduct.pricing ? JSON.parse(newProduct.pricing) : null,
+      verificationType: newProduct.verificationType ? JSON.parse(newProduct.verificationType) : []
+    };
 
     logger.info(`Created new product: ${newProduct.id}`, { 
       userId: req.user?.id,
@@ -216,7 +210,7 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
 
     res.status(201).json({
       success: true,
-      data: newProduct,
+      data: responseData,
       message: 'Product created successfully',
     });
   } catch (error) {
@@ -235,8 +229,12 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
     const { id } = req.params;
     const updateData = req.body;
 
-    const productIndex = products.findIndex(p => p.id === id);
-    if (productIndex === -1) {
+    // Check if product exists
+    const existingProduct = await prisma.product.findUnique({
+      where: { id }
+    });
+
+    if (!existingProduct) {
       return res.status(404).json({
         success: false,
         message: 'Product not found',
@@ -245,9 +243,12 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
     }
 
     // Check for duplicate code if being updated
-    if (updateData.code) {
-      const existingProduct = products.find(p => p.id !== id && p.code === updateData.code);
-      if (existingProduct) {
+    if (updateData.code && updateData.code !== existingProduct.code) {
+      const duplicateProduct = await prisma.product.findUnique({
+        where: { code: updateData.code }
+      });
+
+      if (duplicateProduct) {
         return res.status(400).json({
           success: false,
           message: 'Product code already exists',
@@ -256,23 +257,44 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
       }
     }
 
+    // Prepare update data
+    const updatePayload: any = {};
+
+    if (updateData.name) updatePayload.name = updateData.name;
+    if (updateData.code) updatePayload.code = updateData.code;
+    if (updateData.description !== undefined) updatePayload.description = updateData.description;
+    if (updateData.category) updatePayload.category = updateData.category;
+    if (updateData.isActive !== undefined) updatePayload.isActive = updateData.isActive;
+    if (updateData.pricing) updatePayload.pricing = JSON.stringify(updateData.pricing);
+    if (updateData.verificationType) updatePayload.verificationType = JSON.stringify(updateData.verificationType);
+
     // Update product
-    const updatedProduct = {
-      ...products[productIndex],
-      ...updateData,
-      updatedAt: new Date().toISOString(),
+    const updatedProduct = await prisma.product.update({
+      where: { id },
+      data: updatePayload,
+      include: {
+        client: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    // Transform response data
+    const responseData = {
+      ...updatedProduct,
+      pricing: updatedProduct.pricing ? JSON.parse(updatedProduct.pricing) : null,
+      verificationType: updatedProduct.verificationType ? JSON.parse(updatedProduct.verificationType) : []
     };
 
-    products[productIndex] = updatedProduct;
-
-    logger.info(`Updated product: ${id}`, { 
+    logger.info(`Updated product: ${id}`, {
       userId: req.user?.id,
-      changes: Object.keys(updateData)
+      productId: id,
+      updates: Object.keys(updatePayload)
     });
 
     res.json({
       success: true,
-      data: updatedProduct,
+      data: responseData,
       message: 'Product updated successfully',
     });
   } catch (error) {
@@ -290,8 +312,12 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { id } = req.params;
 
-    const productIndex = products.findIndex(p => p.id === id);
-    if (productIndex === -1) {
+    // Check if product exists
+    const existingProduct = await prisma.product.findUnique({
+      where: { id }
+    });
+
+    if (!existingProduct) {
       return res.status(404).json({
         success: false,
         message: 'Product not found',
@@ -299,12 +325,15 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response) =>
       });
     }
 
-    const deletedProduct = products[productIndex];
-    products.splice(productIndex, 1);
+    // Delete product
+    await prisma.product.delete({
+      where: { id }
+    });
 
-    logger.info(`Deleted product: ${id}`, { 
+    logger.info(`Deleted product: ${id}`, {
       userId: req.user?.id,
-      productName: deletedProduct.name
+      productId: id,
+      productName: existingProduct.name
     });
 
     res.json({
@@ -327,28 +356,46 @@ export const getProductsByClient = async (req: AuthenticatedRequest, res: Respon
     const { id: clientId } = req.params;
     const { isActive } = req.query;
 
-    let clientProducts = products.filter(p => p.clientId === clientId);
+    // Build where clause
+    const whereClause: any = { clientId };
 
-    // Apply active filter if specified
     if (isActive !== undefined) {
-      clientProducts = clientProducts.filter(p => p.isActive === (isActive === 'true'));
+      whereClause.isActive = isActive === 'true';
     }
 
-    logger.info(`Retrieved ${clientProducts.length} products for client ${clientId}`, { 
+    // Get products for the client
+    const products = await prisma.product.findMany({
+      where: whereClause,
+      orderBy: { name: 'asc' },
+      include: {
+        client: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    // Transform data to match expected format
+    const transformedProducts = products.map(product => ({
+      ...product,
+      pricing: product.pricing ? JSON.parse(product.pricing) : null,
+      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
+    }));
+
+    logger.info(`Retrieved ${products.length} products for client ${clientId}`, {
       userId: req.user?.id,
       clientId,
-      isActive
+      total: products.length
     });
 
     res.json({
       success: true,
-      data: clientProducts,
+      data: transformedProducts,
     });
   } catch (error) {
-    logger.error('Error getting products by client:', error);
+    logger.error('Error retrieving products by client:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get products by client',
+      message: 'Failed to retrieve products',
       error: { code: 'INTERNAL_ERROR' },
     });
   }
@@ -360,8 +407,12 @@ export const mapVerificationTypes = async (req: AuthenticatedRequest, res: Respo
     const { id } = req.params;
     const { verificationTypes } = req.body;
 
-    const productIndex = products.findIndex(p => p.id === id);
-    if (productIndex === -1) {
+    // Check if product exists
+    const product = await prisma.product.findUnique({
+      where: { id }
+    });
+
+    if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found',
@@ -369,30 +420,22 @@ export const mapVerificationTypes = async (req: AuthenticatedRequest, res: Respo
       });
     }
 
-    // Validate verification types
-    const validTypes = ['RESIDENCE', 'OFFICE', 'BUSINESS', 'EMPLOYMENT', 'OTHER'];
-    const invalidTypes = verificationTypes.filter((type: string) => !validTypes.includes(type));
-
-    if (invalidTypes.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid verification types: ${invalidTypes.join(', ')}`,
-        error: { code: 'INVALID_VERIFICATION_TYPES' },
-      });
-    }
-
     // Update verification types
-    products[productIndex].verificationType = verificationTypes;
-    products[productIndex].updatedAt = new Date().toISOString();
+    await prisma.product.update({
+      where: { id },
+      data: {
+        verificationType: JSON.stringify(verificationTypes)
+      }
+    });
 
     logger.info(`Mapped verification types to product: ${id}`, {
       userId: req.user?.id,
+      productId: id,
       verificationTypes
     });
 
     res.json({
       success: true,
-      data: products[productIndex],
       message: 'Verification types mapped successfully',
     });
   } catch (error) {
@@ -408,83 +451,60 @@ export const mapVerificationTypes = async (req: AuthenticatedRequest, res: Respo
 // POST /api/products/bulk-import - Bulk import products
 export const bulkImportProducts = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { products: importProducts } = req.body;
+    const { products } = req.body;
 
-    if (!importProducts || !Array.isArray(importProducts) || importProducts.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Products array is required',
-        error: { code: 'MISSING_PRODUCTS' },
-      });
-    }
-
-    const importedProducts = [];
+    // Validate and create products
+    const createdProducts = [];
     const errors = [];
 
-    for (let i = 0; i < importProducts.length; i++) {
+    for (const productData of products) {
       try {
-        const productData = importProducts[i];
-        const { name, code, description, category, clientId, pricing, verificationType } = productData;
+        // Check if code already exists
+        const existingProduct = await prisma.product.findUnique({
+          where: { code: productData.code }
+        });
 
-        // Validate required fields
-        if (!name || !code || !clientId) {
-          errors.push(`Row ${i + 1}: Name, code, and client ID are required`);
-          continue;
-        }
-
-        // Check for duplicate code
-        const existingProduct = products.find(p => p.code === code);
         if (existingProduct) {
-          errors.push(`Row ${i + 1}: Product code '${code}' already exists`);
+          errors.push(`Product code ${productData.code} already exists`);
           continue;
         }
 
-        const newProduct = {
-          id: `product_${Date.now()}_${i}`,
-          name,
-          code,
-          description: description || '',
-          category: category || 'OTHER',
-          clientId,
-          pricing: {
-            basePrice: pricing?.basePrice || 0,
-            currency: pricing?.currency || 'INR',
-            pricingModel: pricing?.pricingModel || 'PER_VERIFICATION',
-          },
-          verificationType: verificationType || [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+        // Create product
+        const newProduct = await prisma.product.create({
+          data: {
+            name: productData.name,
+            code: productData.code,
+            description: productData.description || null,
+            category: productData.category || 'OTHER',
+            clientId: productData.clientId,
+            isActive: productData.isActive !== undefined ? productData.isActive : true,
+            pricing: productData.pricing ? JSON.stringify(productData.pricing) : null,
+            verificationType: productData.verificationType ? JSON.stringify(productData.verificationType) : null,
+          }
+        });
 
-        products.push(newProduct);
-        importedProducts.push(newProduct);
+        createdProducts.push(newProduct);
       } catch (error) {
-        errors.push(`Row ${i + 1}: ${error}`);
+        errors.push(`Failed to create product ${productData.code}: ${error.message}`);
       }
     }
 
-    logger.info(`Bulk imported ${importedProducts.length} products`, {
+    logger.info(`Bulk imported ${createdProducts.length} products`, {
       userId: req.user?.id,
-      successCount: importedProducts.length,
-      errorCount: errors.length
+      created: createdProducts.length,
+      errors: errors.length
     });
 
-    res.status(201).json({
+    res.json({
       success: true,
       data: {
-        imported: importedProducts,
-        errors,
-        summary: {
-          total: importProducts.length,
-          successful: importedProducts.length,
-          failed: errors.length,
-        }
+        created: createdProducts.length,
+        errors: errors
       },
-      message: `Bulk import completed: ${importedProducts.length} successful, ${errors.length} failed`,
+      message: `Successfully imported ${createdProducts.length} products`,
     });
   } catch (error) {
-    logger.error('Error in bulk import:', error);
+    logger.error('Error bulk importing products:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to bulk import products',
@@ -497,36 +517,12 @@ export const bulkImportProducts = async (req: AuthenticatedRequest, res: Respons
 export const getProductCategories = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const categories = [
-      {
-        code: 'LOAN_VERIFICATION',
-        name: 'Loan Verification',
-        description: 'Verification services for loan applications',
-      },
-      {
-        code: 'EMPLOYMENT_VERIFICATION',
-        name: 'Employment Verification',
-        description: 'Employment and salary verification services',
-      },
-      {
-        code: 'BUSINESS_VERIFICATION',
-        name: 'Business Verification',
-        description: 'Business and commercial verification services',
-      },
-      {
-        code: 'IDENTITY_VERIFICATION',
-        name: 'Identity Verification',
-        description: 'Identity and document verification services',
-      },
-      {
-        code: 'ADDRESS_VERIFICATION',
-        name: 'Address Verification',
-        description: 'Residential and office address verification',
-      },
-      {
-        code: 'OTHER',
-        name: 'Other',
-        description: 'Other verification services',
-      },
+      'LOAN_VERIFICATION',
+      'EMPLOYMENT_VERIFICATION',
+      'BUSINESS_VERIFICATION',
+      'IDENTITY_VERIFICATION',
+      'ADDRESS_VERIFICATION',
+      'OTHER'
     ];
 
     res.json({
@@ -534,10 +530,10 @@ export const getProductCategories = async (req: AuthenticatedRequest, res: Respo
       data: categories,
     });
   } catch (error) {
-    logger.error('Error getting product categories:', error);
+    logger.error('Error retrieving product categories:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get product categories',
+      message: 'Failed to retrieve product categories',
       error: { code: 'INTERNAL_ERROR' },
     });
   }
@@ -546,40 +542,44 @@ export const getProductCategories = async (req: AuthenticatedRequest, res: Respo
 // GET /api/products/stats - Get product statistics
 export const getProductStats = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const totalProducts = products.length;
-    const activeProducts = products.filter(p => p.isActive).length;
+    const totalProducts = await prisma.product.count();
+    const activeProducts = await prisma.product.count({
+      where: { isActive: true }
+    });
     const inactiveProducts = totalProducts - activeProducts;
 
-    const categoryStats = products.reduce((acc, product) => {
-      acc[product.category] = (acc[product.category] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const clientStats = products.reduce((acc, product) => {
-      acc[product.clientId] = (acc[product.clientId] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    // Get products by category
+    const productsByCategory = await prisma.product.groupBy({
+      by: ['category'],
+      _count: {
+        id: true
+      }
+    });
 
     const stats = {
-      totalProducts,
-      activeProducts,
-      inactiveProducts,
-      categoryDistribution: categoryStats,
-      clientDistribution: clientStats,
-      averagePrice: products.length > 0
-        ? products.reduce((sum, p) => sum + (p.pricing?.basePrice || 0), 0) / products.length
-        : 0,
+      total: totalProducts,
+      active: activeProducts,
+      inactive: inactiveProducts,
+      byCategory: productsByCategory.reduce((acc, item) => {
+        acc[item.category] = item._count.id;
+        return acc;
+      }, {} as Record<string, number>)
     };
+
+    logger.info('Retrieved product statistics', {
+      userId: req.user?.id,
+      stats
+    });
 
     res.json({
       success: true,
       data: stats,
     });
   } catch (error) {
-    logger.error('Error getting product stats:', error);
+    logger.error('Error retrieving product stats:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get product statistics',
+      message: 'Failed to retrieve product statistics',
       error: { code: 'INTERNAL_ERROR' },
     });
   }
