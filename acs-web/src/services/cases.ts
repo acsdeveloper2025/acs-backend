@@ -19,6 +19,26 @@ export interface CaseUpdateData {
   assignedToId?: string;
 }
 
+export interface CreateCaseData {
+  title: string;
+  description: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  addressStreet: string;
+  addressCity: string;
+  addressState: string;
+  addressPincode: string;
+  latitude?: number;
+  longitude?: number;
+  verificationType?: string;
+  verificationTypeId?: string;
+  assignedToId: string;
+  clientId: string;
+  priority?: number;
+  notes?: string;
+}
+
 export class CasesService {
   async getCases(query: CaseListQuery = {}): Promise<ApiResponse<Case[]>> {
     return apiService.get('/cases', query);
@@ -26,6 +46,10 @@ export class CasesService {
 
   async getCaseById(id: string): Promise<ApiResponse<Case>> {
     return apiService.get(`/cases/${id}`);
+  }
+
+  async createCase(data: CreateCaseData): Promise<ApiResponse<Case>> {
+    return apiService.post('/cases', data);
   }
 
   async updateCaseStatus(id: string, status: string): Promise<ApiResponse<Case>> {

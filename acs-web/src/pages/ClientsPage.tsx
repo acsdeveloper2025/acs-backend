@@ -24,12 +24,15 @@ export function ClientsPage() {
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkImportType, setBulkImportType] = useState<'clients' | 'products'>('clients');
 
+
   // Fetch data based on active tab
-  const { data: clientsData, isLoading: clientsLoading } = useQuery({
+  const { data: clientsData, isLoading: clientsLoading, error: clientsError } = useQuery({
     queryKey: ['clients', searchQuery],
     queryFn: () => clientsService.getClients({ search: searchQuery }),
     enabled: activeTab === 'clients',
   });
+
+
 
   const { data: productsData, isLoading: productsLoading } = useQuery({
     queryKey: ['products', searchQuery],
@@ -60,6 +63,8 @@ export function ClientsPage() {
 
   return (
     <div className="space-y-6">
+
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

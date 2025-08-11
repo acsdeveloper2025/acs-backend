@@ -109,7 +109,11 @@ export const useCreateClient = () => {
   return useMutation({
     mutationFn: (data: CreateClientData) => clientsService.createClient(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientKeys.all });
+      // Invalidate all client-related queries to ensure lists update
+      queryClient.invalidateQueries({
+        queryKey: clientKeys.all,
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client created successfully');
     },
     onError: (error: any) => {
@@ -125,7 +129,11 @@ export const useUpdateClient = () => {
     mutationFn: ({ id, data }: { id: string; data: UpdateClientData }) =>
       clientsService.updateClient(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientKeys.all });
+      // Invalidate all client-related queries to ensure lists update
+      queryClient.invalidateQueries({
+        queryKey: clientKeys.all,
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client updated successfully');
     },
     onError: (error: any) => {
@@ -140,7 +148,11 @@ export const useDeleteClient = () => {
   return useMutation({
     mutationFn: (id: string) => clientsService.deleteClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: clientKeys.all });
+      // Invalidate all client-related queries to ensure lists update
+      queryClient.invalidateQueries({
+        queryKey: clientKeys.all,
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client deleted successfully');
     },
     onError: (error: any) => {

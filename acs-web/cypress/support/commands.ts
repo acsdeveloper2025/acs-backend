@@ -25,6 +25,15 @@ declare global {
       mockApiResponse(method: string, url: string, response: any): Chainable<void>;
       seedTestData(): Chainable<void>;
       cleanupTestData(): Chainable<void>;
+      fillForm(formData: Record<string, any>): Chainable<void>;
+      uploadFile(selector: string, fileName: string, fileType?: string): Chainable<void>;
+      waitForLoading(): Chainable<void>;
+      sortTable(column: string, direction?: 'asc' | 'desc'): Chainable<void>;
+      filterTable(filterValue: string): Chainable<void>;
+      toggleTheme(): Chainable<void>;
+      setTheme(theme: 'light' | 'dark' | 'system'): Chainable<void>;
+      expectError(message: string): Chainable<void>;
+      expectSuccess(message: string): Chainable<void>;
     }
   }
 }

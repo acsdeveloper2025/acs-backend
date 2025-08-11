@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { casesService } from '@/services/cases';
-import type { CaseListQuery, CaseUpdateData } from '@/services/cases';
+import type { CaseListQuery, CaseUpdateData, CreateCaseData } from '@/services/cases';
 import toast from 'react-hot-toast';
 
 // Query keys
@@ -115,6 +115,21 @@ export const useAssignCase = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to assign case');
+    },
+  });
+};
+
+export const useCreateCase = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateCaseData) => casesService.createCase(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: caseKeys.all });
+      toast.success('Case created and assigned successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to create case');
     },
   });
 };

@@ -34,18 +34,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check if user is already authenticated on app start
-    const initializeAuth = () => {
-      const token = authService.getToken();
-      const user = authService.getCurrentUser();
-      
-      if (token && user) {
-        setState({
-          user,
-          token,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else {
+    const initializeAuth = async () => {
+      try {
+        const token = authService.getToken();
+        const user = authService.getCurrentUser();
+
+        if (token && user) {
+          // Verify token is still valid by making a test API call
+          try {
+            // Test the token with a simple API call
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/user/profile`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (response.ok) {
+              // Token is valid
+              setState({
+                user,
+                token,
+                isAuthenticated: true,
+                isLoading: false,
+              });
+            } else {
+              // Token is invalid, clear auth data
+              await authService.logout();
+              setState({
+                user: null,
+                token: null,
+                isAuthenticated: false,
+                isLoading: false,
+              });
+            }
+          } catch (error) {
+            // Network error or token invalid, clear auth data
+            console.warn('Token validation failed:', error);
+            await authService.logout();
+            setState({
+              user: null,
+              token: null,
+              isAuthenticated: false,
+              isLoading: false,
+            });
+          }
+        } else {
+          // No token or user data
+          setState({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
         setState({
           user: null,
           token: null,

@@ -6,7 +6,7 @@ import { CaseStatusChart } from '@/components/dashboard/CaseStatusChart';
 import { MonthlyTrendsChart } from '@/components/dashboard/MonthlyTrendsChart';
 import { RecentActivities } from '@/components/dashboard/RecentActivities';
 import { useDashboardStats, useRecentActivities, useCaseStatusDistribution, useMonthlyTrends } from '@/hooks/useDashboard';
-import { FileText, Building2, CheckSquare, Receipt, Users, Download } from 'lucide-react';
+import { FileText, Building2, CheckSquare, Receipt, Users, Download, Plus, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const DashboardPage: React.FC = () => {
@@ -76,12 +76,20 @@ export const DashboardPage: React.FC = () => {
 
   const quickActions = [
     {
-      title: 'New Cases',
-      description: 'View newly assigned cases',
-      href: '/cases?status=ASSIGNED',
-      icon: FileText,
-      count: stats.inProgressCases,
-      color: 'bg-blue-500',
+      title: 'Create New Case',
+      description: 'Assign new case to field user',
+      href: '/cases/new',
+      icon: Plus,
+      count: null,
+      color: 'bg-emerald-500',
+    },
+    {
+      title: 'Completed Cases',
+      description: 'View finished verifications',
+      href: '/cases/completed',
+      icon: CheckCircle,
+      count: stats.completedCases,
+      color: 'bg-green-500',
     },
     {
       title: 'Pending Reviews',
@@ -92,20 +100,12 @@ export const DashboardPage: React.FC = () => {
       color: 'bg-yellow-500',
     },
     {
-      title: 'Generate Invoice',
-      description: 'Create new client invoice',
-      href: '/invoices/new',
-      icon: Receipt,
-      count: null,
-      color: 'bg-green-500',
-    },
-    {
-      title: 'User Management',
-      description: 'Manage system users',
-      href: '/users',
-      icon: Users,
-      count: null,
-      color: 'bg-purple-500',
+      title: 'All Cases',
+      description: 'View all case statuses',
+      href: '/cases',
+      icon: FileText,
+      count: stats.totalCases,
+      color: 'bg-blue-500',
     },
   ];
 

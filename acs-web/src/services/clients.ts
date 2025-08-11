@@ -23,32 +23,7 @@ export class ClientsService {
   }
 
   async createClient(data: CreateClientData): Promise<ApiResponse<Client>> {
-    // For demo purposes, simulate API call with mock data
-    console.log('Creating client with data:', data);
-
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Create mock client response
-    const mockClient: Client = {
-      id: `client_${Date.now()}`,
-      name: data.name,
-      code: data.code,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const mockResponse: ApiResponse<Client> = {
-      success: true,
-      data: mockClient,
-      message: 'Client created successfully',
-    };
-
-    console.log('Mock client created:', mockResponse);
-    return mockResponse;
-
-    // Uncomment this line when real API is available:
-    // return apiService.post('/clients', data);
+    return apiService.post('/clients', data);
   }
 
   async updateClient(id: string, data: UpdateClientData): Promise<ApiResponse<Client>> {

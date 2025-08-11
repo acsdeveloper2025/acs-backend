@@ -53,13 +53,55 @@ export function CreateClientDialog({ open, onOpenChange }: CreateClientDialogPro
 
   const createMutation = useMutation({
     mutationFn: (data: CreateClientFormData) => clientsService.createClient(data),
+    onMutate: async (newClient) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['clients'] });
+
+      // Snapshot the previous value
+      const previousClients = queryClient.getQueriesData({ queryKey: ['clients'] });
+
+      // Optimistically update to the new value
+      queryClient.setQueriesData(
+        { queryKey: ['clients'] },
+        (old: any) => {
+          if (!old?.data) return old;
+
+          const optimisticClient = {
+            id: `temp_${Date.now()}`,
+            name: newClient.name,
+            code: newClient.code,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return {
+            ...old,
+            data: [optimisticClient, ...old.data]
+          };
+        }
+      );
+
+      // Return a context object with the snapshotted value
+      return { previousClients };
+    },
     onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      // Invalidate all client-related queries to ensure the list updates with real data
+      queryClient.invalidateQueries({
+        queryKey: ['clients'],
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client created successfully');
       form.reset();
       onOpenChange(false);
     },
-    onError: (error: any) => {
+    onError: (error: any, newClient, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousClients) {
+        context.previousClients.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+
       console.error('Error creating client:', error);
 
       // Handle different types of errors

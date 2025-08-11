@@ -50,10 +50,16 @@ export function ClientsTable({ data, isLoading }: ClientsTableProps) {
 
   const queryClient = useQueryClient();
 
+
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => clientsService.deleteClient(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      // Invalidate all client-related queries to ensure the list updates
+      queryClient.invalidateQueries({
+        queryKey: ['clients'],
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client deleted successfully');
       setShowDeleteDialog(false);
       setClientToDelete(null);
@@ -108,12 +114,15 @@ export function ClientsTable({ data, isLoading }: ClientsTableProps) {
         <p className="text-muted-foreground">
           Get started by creating your first client.
         </p>
+
       </div>
     );
   }
 
   return (
     <>
+
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>

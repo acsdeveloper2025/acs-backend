@@ -44,36 +44,11 @@ export class AuthService {
       }
     }
 
-    // Development fallback - provide a mock user for testing
-    if (process.env.NODE_ENV === 'development') {
-      return {
-        id: 'dev-user-1',
-        name: 'Development User',
-        email: 'dev@example.com',
-        role: 'ADMIN',
-        designation: 'Administrator',
-        profilePhotoUrl: null,
-        firstName: 'Development',
-        lastName: 'User',
-        phone: '+1234567890',
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
     return null;
   }
 
   getToken(): string | null {
-    const token = localStorage.getItem('auth_token');
-
-    // Development fallback - provide a mock token for testing
-    if (!token && process.env.NODE_ENV === 'development') {
-      return 'dev-mock-token';
-    }
-
-    return token;
+    return localStorage.getItem('auth_token');
   }
 
   isAuthenticated(): boolean {

@@ -66,7 +66,11 @@ export function EditClientDialog({ client, open, onOpenChange }: EditClientDialo
   const updateMutation = useMutation({
     mutationFn: (data: EditClientFormData) => clientsService.updateClient(client.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      // Invalidate all client-related queries to ensure the list updates
+      queryClient.invalidateQueries({
+        queryKey: ['clients'],
+        exact: false // This will invalidate all queries that start with ['clients']
+      });
       toast.success('Client updated successfully');
       onOpenChange(false);
     },

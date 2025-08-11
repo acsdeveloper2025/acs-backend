@@ -10,7 +10,9 @@ import {
   CheckSquare,
   Settings,
   Wifi,
-  Shield
+  Shield,
+  Plus,
+  CheckCircle
 } from 'lucide-react';
 
 export interface NavigationItem {
@@ -42,6 +44,20 @@ export const navigationItems: NavigationItem[] = [
         label: 'All Cases',
         href: '/cases',
         icon: FileText,
+        roles: ['ADMIN', 'BACKEND'],
+      },
+      {
+        id: 'cases-new',
+        label: 'Create New Case',
+        href: '/cases/new',
+        icon: Plus,
+        roles: ['ADMIN', 'BACKEND'],
+      },
+      {
+        id: 'cases-completed',
+        label: 'Completed Cases',
+        href: '/cases/completed',
+        icon: CheckCircle,
         roles: ['ADMIN', 'BACKEND'],
       },
       {

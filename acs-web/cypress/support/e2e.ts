@@ -67,29 +67,14 @@ Cypress.Commands.add('setDesktopViewport', () => {
 beforeEach(() => {
   // Clear local storage before each test
   cy.clearLocalStorage();
-  
+
   // Clear cookies
   cy.clearCookies();
-  
-  // Set up performance monitoring
-  cy.window().then((win) => {
-    win.performance.mark('test-start');
-  });
 });
 
 afterEach(() => {
-  // Log performance metrics
-  cy.window().then((win) => {
-    win.performance.mark('test-end');
-    win.performance.measure('test-duration', 'test-start', 'test-end');
-    
-    const measures = win.performance.getEntriesByType('measure');
-    const testDuration = measures.find(m => m.name === 'test-duration');
-    
-    if (testDuration) {
-      cy.log(`Test duration: ${testDuration.duration.toFixed(2)}ms`);
-    }
-  });
+  // Simple cleanup - removed performance monitoring to avoid errors
+  cy.log('Test completed');
 });
 
 // Accessibility testing setup
