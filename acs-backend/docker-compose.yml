@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # SQL Server Database
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: acs-sqlserver
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrong@Passw0rd
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - acs-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: acs-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - acs-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 3s
+      retries: 5
+
+  # Backend Application
+  backend:
+    build:
+      context: .
+      target: development
+    container_name: acs-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: sqlserver://sqlserver:1433;database=acs_backend;user=sa;password=YourStrong@Passw0rd;trustServerCertificate=true
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: development-jwt-secret-change-in-production
+      JWT_REFRESH_SECRET: development-refresh-secret-change-in-production
+      CORS_ORIGIN: http://localhost:3001
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    networks:
+      - acs-network
+    depends_on:
+      - sqlserver
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # Adminer for database management (optional)
+  adminer:
+    image: adminer:latest
+    container_name: acs-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - acs-network
+    depends_on:
+      - sqlserver
+
+  # Redis Commander for Redis management (optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: acs-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - acs-network
+    depends_on:
+      - redis
+
+volumes:
+  sqlserver_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  acs-network:
+    driver: bridge
