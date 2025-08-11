@@ -5,11 +5,28 @@ const prisma = new PrismaClient();
 
 async function checkUser() {
   try {
-    console.log('🔍 Checking user in database...');
-    
-    // Find the admin user
+    console.log('🔍 Checking all users in database...');
+
+    // List all users first
+    const allUsers = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        role: true,
+        employeeId: true,
+      },
+    });
+
+    console.log('📋 All users in database:');
+    allUsers.forEach(user => {
+      console.log(`  - ${user.username} (${user.name}) - Role: ${user.role}`);
+    });
+
+    // Find the field user
     const user = await prisma.user.findUnique({
-      where: { username: 'admin' },
+      where: { username: 'field001' },
       select: {
         id: true,
         name: true,
@@ -21,9 +38,9 @@ async function checkUser() {
         employeeId: true,
       },
     });
-    
+
     if (!user) {
-      console.log('❌ User not found');
+      console.log('❌ field001 user not found');
       return;
     }
     
@@ -39,7 +56,7 @@ async function checkUser() {
     });
     
     // Test password verification
-    const testPassword = 'admin123';
+    const testPassword = 'field123';
     const isValid = await bcrypt.compare(testPassword, user.passwordHash);
     console.log(`🔐 Password verification for "${testPassword}":`, isValid ? '✅ VALID' : '❌ INVALID');
     

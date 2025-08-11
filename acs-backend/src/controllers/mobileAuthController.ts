@@ -182,7 +182,7 @@ export class MobileAuthController {
 
       // Check for app version compatibility
       const currentAppVersion = deviceInfo?.appVersion || '1.0.0';
-      const forceUpdate = this.shouldForceUpdate(currentAppVersion);
+      const forceUpdate = MobileAuthController.shouldForceUpdate(currentAppVersion);
 
       await createAuditLog({
         action: 'MOBILE_LOGIN_SUCCESS',
@@ -373,8 +373,8 @@ export class MobileAuthController {
     try {
       const { currentVersion, platform }: MobileVersionCheckRequest = req.body;
 
-      const forceUpdate = this.shouldForceUpdate(currentVersion);
-      const updateRequired = this.shouldUpdate(currentVersion);
+      const forceUpdate = MobileAuthController.shouldForceUpdate(currentVersion);
+      const updateRequired = MobileAuthController.shouldUpdate(currentVersion);
 
       const response: MobileVersionCheckResponse = {
         updateRequired,
@@ -478,11 +478,11 @@ export class MobileAuthController {
 
   // Helper methods
   private static shouldForceUpdate(currentVersion: string): boolean {
-    return this.compareVersions(currentVersion, config.mobile.forceUpdateVersion) < 0;
+    return MobileAuthController.compareVersions(currentVersion, config.mobile.forceUpdateVersion) < 0;
   }
 
   private static shouldUpdate(currentVersion: string): boolean {
-    return this.compareVersions(currentVersion, config.mobile.minSupportedVersion) < 0;
+    return MobileAuthController.compareVersions(currentVersion, config.mobile.minSupportedVersion) < 0;
   }
 
   private static compareVersions(version1: string, version2: string): number {
