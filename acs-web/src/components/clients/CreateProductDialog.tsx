@@ -50,11 +50,8 @@ export function CreateProductDialog({ open, onOpenChange }: CreateProductDialogP
 
   const createMutation = useMutation({
     mutationFn: (data: CreateProductFormData) => productsService.createProduct({
-      ...data,
-      category: 'OTHER',
-      basePrice: 0,
-      currency: 'INR',
-      pricingModel: 'PER_VERIFICATION',
+      name: data.name,
+      code: data.code,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
