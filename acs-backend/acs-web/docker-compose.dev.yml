@@ -1,0 +1,82 @@
+version: '3.8'
+
+# Development Environment for ACS Web Frontend
+# Optimized for development with hot reload and debugging
+
+services:
+  # Main development service
+  acs-web-dev:
+    build:
+      context: .
+      target: development
+    container_name: acs-web-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000
+      - VITE_APP_VERSION=dev
+      - NODE_ENV=development
+      - VITE_DEV_SERVER_HOST=0.0.0.0
+      - VITE_DEV_SERVER_PORT=5173
+    networks:
+      - acs-web-dev-network
+    stdin_open: true
+    tty: true
+
+  # Development database (optional - for frontend-only development)
+  json-server:
+    image: clue/json-server
+    container_name: acs-web-json-server
+    ports:
+      - "3001:80"
+    volumes:
+      - ./dev/db.json:/data/db.json
+    networks:
+      - acs-web-dev-network
+    profiles:
+      - mock-api
+
+  # Storybook for component development
+  storybook:
+    build:
+      context: .
+      target: development
+    container_name: acs-web-storybook
+    ports:
+      - "6006:6006"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    command: ["npm", "run", "storybook", "--", "--host", "0.0.0.0", "--port", "6006"]
+    networks:
+      - acs-web-dev-network
+    profiles:
+      - storybook
+
+  # Development tools container
+  dev-tools:
+    build:
+      context: .
+      target: development
+    container_name: acs-web-dev-tools
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    networks:
+      - acs-web-dev-network
+    profiles:
+      - tools
+    command: ["tail", "-f", "/dev/null"]
+
+networks:
+  acs-web-dev-network:
+    driver: bridge
+
+volumes:
+  node_modules:
+    driver: local
