@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search, Upload, MapPin, Building } from 'lucide-react';
+import { Plus, Search, Upload, MapPin, Building, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,26 +14,39 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { locationsService } from '@/services/locations';
+import { CountriesTable } from '@/components/locations/CountriesTable';
 import { StatesTable } from '@/components/locations/StatesTable';
 import { CitiesTable } from '@/components/locations/CitiesTable';
 import { PincodesTable } from '@/components/locations/PincodesTable';
+import { CreateCountryDialog } from '@/components/locations/CreateCountryDialog';
 import { CreateStateDialog } from '@/components/locations/CreateStateDialog';
 import { CreateCityDialog } from '@/components/locations/CreateCityDialog';
 import { CreatePincodeDialog } from '@/components/locations/CreatePincodeDialog';
 import { BulkImportLocationDialog } from '@/components/locations/BulkImportLocationDialog';
 
 export function LocationsPage() {
-  const [activeTab, setActiveTab] = useState('states');
+  const [activeTab, setActiveTab] = useState('countries');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [selectedContinent, setSelectedContinent] = useState<string>('all');
+  const [showCreateCountry, setShowCreateCountry] = useState(false);
   const [showCreateState, setShowCreateState] = useState(false);
   const [showCreateCity, setShowCreateCity] = useState(false);
   const [showCreatePincode, setShowCreatePincode] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
-  const [bulkImportType, setBulkImportType] = useState<'states' | 'cities' | 'pincodes'>('states');
+  const [bulkImportType, setBulkImportType] = useState<'countries' | 'states' | 'cities' | 'pincodes'>('countries');
 
   // Fetch data based on active tab and filters
+  const { data: countriesData, isLoading: countriesLoading } = useQuery({
+    queryKey: ['countries', searchQuery, selectedContinent],
+    queryFn: () => locationsService.getCountries({
+      search: searchQuery,
+      continent: selectedContinent !== 'all' ? selectedContinent : undefined,
+    }),
+    enabled: activeTab === 'countries',
+  });
+
   const { data: statesData, isLoading: statesLoading } = useQuery({
     queryKey: ['states', searchQuery, selectedCountry],
     queryFn: () => locationsService.getStates({
@@ -59,18 +72,18 @@ export function LocationsPage() {
     enabled: activeTab === 'pincodes',
   });
 
-  // Fetch state names and countries for filters
+  // Fetch filter data
   const { data: stateNamesData } = useQuery({
     queryKey: ['state-names'],
     queryFn: () => locationsService.getStateNames(),
   });
 
-  const { data: countriesData } = useQuery({
-    queryKey: ['countries'],
+  const { data: countryNamesData } = useQuery({
+    queryKey: ['country-names'],
     queryFn: () => locationsService.getCountries(),
   });
 
-  const handleBulkImport = (type: 'states' | 'cities' | 'pincodes') => {
+  const handleBulkImport = (type: 'countries' | 'states' | 'cities' | 'pincodes') => {
     setBulkImportType(type);
     setShowBulkImport(true);
   };
@@ -79,10 +92,12 @@ export function LocationsPage() {
     setSearchQuery('');
     setSelectedState('all');
     setSelectedCountry('all');
+    setSelectedContinent('all');
   };
 
   const getTabStats = () => {
     return {
+      countries: countriesData?.data?.length || 0,
       states: statesData?.data?.length || 0,
       cities: citiesData?.data?.length || 0,
       pincodes: pincodesData?.data?.length || 0,
@@ -91,7 +106,9 @@ export function LocationsPage() {
 
   const stats = getTabStats();
   const stateNames = stateNamesData?.data || [];
-  const countries = countriesData?.data || [];
+  const countryNames = countryNamesData?.data || [];
+
+  const continents = ['Africa', 'Antarctica', 'Asia', 'Europe', 'North America', 'Oceania', 'South America'];
 
   return (
     <div className="space-y-6">
@@ -106,7 +123,19 @@ export function LocationsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Countries</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.countries}</div>
+            <p className="text-xs text-muted-foreground">
+              Across all continents
+            </p>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total States</CardTitle>
@@ -161,6 +190,14 @@ export function LocationsPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <div className="flex items-center justify-between">
               <TabsList>
+                <TabsTrigger value="countries">
+                  Countries
+                  {stats.countries > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {stats.countries}
+                    </Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="states">
                   States
                   {stats.states > 0 && (
@@ -189,6 +226,26 @@ export function LocationsPage() {
 
               {/* Actions */}
               <div className="flex items-center space-x-2">
+                {activeTab === 'countries' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkImport('countries')}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Countries
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowCreateCountry(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Country
+                    </Button>
+                  </>
+                )}
+
                 {activeTab === 'states' && (
                   <>
                     <Button
@@ -263,6 +320,22 @@ export function LocationsPage() {
                 />
               </div>
 
+              {activeTab === 'countries' && (
+                <Select value={selectedContinent} onValueChange={setSelectedContinent}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by continent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Continents</SelectItem>
+                    {continents.map((continent) => (
+                      <SelectItem key={continent} value={continent}>
+                        {continent}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               {(activeTab === 'states' || activeTab === 'cities') && (
                 <Select value={selectedCountry} onValueChange={setSelectedCountry}>
                   <SelectTrigger className="w-48">
@@ -270,7 +343,7 @@ export function LocationsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Countries</SelectItem>
-                    {countries.map((country) => (
+                    {countryNames.map((country) => (
                       <SelectItem key={country} value={country}>
                         {country}
                       </SelectItem>
@@ -295,12 +368,19 @@ export function LocationsPage() {
                 </Select>
               )}
 
-              {(searchQuery || selectedState !== 'all' || selectedCountry !== 'all') && (
+              {(searchQuery || selectedState !== 'all' || selectedCountry !== 'all' || selectedContinent !== 'all') && (
                 <Button variant="outline" size="sm" onClick={clearFilters}>
                   Clear Filters
                 </Button>
               )}
             </div>
+
+            <TabsContent value="countries" className="space-y-4">
+              <CountriesTable
+                data={countriesData?.data || []}
+                isLoading={countriesLoading}
+              />
+            </TabsContent>
 
             <TabsContent value="states" className="space-y-4">
               <StatesTable
@@ -327,6 +407,11 @@ export function LocationsPage() {
       </Card>
 
       {/* Dialogs */}
+      <CreateCountryDialog
+        open={showCreateCountry}
+        onOpenChange={setShowCreateCountry}
+      />
+
       <CreateStateDialog
         open={showCreateState}
         onOpenChange={setShowCreateState}

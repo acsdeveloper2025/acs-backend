@@ -1,3 +1,13 @@
+export interface Country {
+  id: string;
+  name: string;
+  code: string;
+  continent: string;
+  createdAt: string;
+  updatedAt: string;
+  states?: State[];
+}
+
 export interface State {
   id: string;
   name: string;
@@ -26,6 +36,18 @@ export interface Pincode {
   createdAt: string;
   updatedAt: string;
   city?: City;
+}
+
+export interface CreateCountryData {
+  name: string;
+  code: string;
+  continent: string;
+}
+
+export interface UpdateCountryData {
+  name?: string;
+  code?: string;
+  continent?: string;
 }
 
 export interface CreateStateData {
