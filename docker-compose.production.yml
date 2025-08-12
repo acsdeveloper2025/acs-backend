@@ -1,0 +1,332 @@
+version: '3.8'
+
+# Production Environment Docker Compose
+# Optimized for production deployment with security and performance
+
+services:
+  # SQL Server Database
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: crm-prod-sqlserver
+    restart: always
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD_FILE=/run/secrets/db_password
+      - MSSQL_PID=Standard
+    ports:
+      - "127.0.0.1:1433:1433"  # Bind to localhost only
+    volumes:
+      - sqlserver_prod_data:/var/opt/mssql
+      - ./backups:/var/backups
+    networks:
+      - crm-prod-network
+    secrets:
+      - db_password
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $(cat /run/secrets/db_password) -Q 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: crm-prod-redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"  # Bind to localhost only
+    volumes:
+      - redis_prod_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - crm-prod-network
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 3s
+      retries: 5
+      interval: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # Backend API
+  backend:
+    build:
+      context: ./acs-backend
+      target: production
+      args:
+        NODE_ENV: production
+    image: crm-backend:latest
+    container_name: crm-prod-backend
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      JWT_REFRESH_SECRET_FILE: /run/secrets/jwt_refresh_secret
+      CORS_ORIGIN: https://yourdomain.com,https://mobile.yourdomain.com
+      LOG_LEVEL: info
+      RATE_LIMIT_ENABLED: true
+      HELMET_ENABLED: true
+    ports:
+      - "127.0.0.1:3000:3000"  # Bind to localhost only
+    volumes:
+      - uploads_prod_data:/app/uploads:ro
+      - logs_prod_data:/app/logs
+    networks:
+      - crm-prod-network
+    secrets:
+      - database_url
+      - jwt_secret
+      - jwt_refresh_secret
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      interval: 30s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # Web Frontend
+  web-frontend:
+    build:
+      context: ./acs-web
+      target: runner
+      args:
+        VITE_API_URL: https://api.yourdomain.com
+        VITE_WS_URL: wss://api.yourdomain.com
+        VITE_APP_VERSION: 1.0.0
+        NODE_ENV: production
+    image: crm-web-frontend:latest
+    container_name: crm-prod-web-frontend
+    restart: always
+    ports:
+      - "127.0.0.1:3001:80"  # Bind to localhost only
+    networks:
+      - crm-prod-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # Mobile App
+  mobile-app:
+    build:
+      context: ./caseflow-mobile
+      target: web-preview
+      args:
+        VITE_API_URL: https://api.yourdomain.com
+        VITE_WS_URL: wss://api.yourdomain.com
+        VITE_APP_VERSION: 1.0.0
+        NODE_ENV: production
+    image: crm-mobile-app:latest
+    container_name: crm-prod-mobile-app
+    restart: always
+    ports:
+      - "127.0.0.1:5173:80"  # Bind to localhost only
+    networks:
+      - crm-prod-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: crm-prod-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - crm-prod-network
+    depends_on:
+      - backend
+      - web-frontend
+      - mobile-app
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+  # Log Aggregation
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: crm-prod-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD_FILE=/run/secrets/elastic_password
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - elasticsearch_prod_data:/usr/share/elasticsearch/data
+    networks:
+      - crm-prod-network
+    secrets:
+      - elastic_password
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: crm-prod-prometheus
+    restart: always
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_prod_data:/prometheus
+    networks:
+      - crm-prod-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: crm-prod-grafana
+    restart: always
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - grafana_prod_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - crm-prod-network
+    secrets:
+      - grafana_password
+    depends_on:
+      - prometheus
+
+  # Backup Service
+  backup:
+    image: alpine:latest
+    container_name: crm-prod-backup
+    restart: "no"
+    volumes:
+      - sqlserver_prod_data:/backup/sqlserver:ro
+      - redis_prod_data:/backup/redis:ro
+      - uploads_prod_data:/backup/uploads:ro
+      - ./backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    networks:
+      - crm-prod-network
+    command: ["/backup.sh"]
+    profiles:
+      - backup
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  database_url:
+    file: ./secrets/database_url.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  jwt_refresh_secret:
+    file: ./secrets/jwt_refresh_secret.txt
+  elastic_password:
+    file: ./secrets/elastic_password.txt
+  grafana_password:
+    file: ./secrets/grafana_password.txt
+
+volumes:
+  sqlserver_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
+  uploads_prod_data:
+    driver: local
+  logs_prod_data:
+    driver: local
+  elasticsearch_prod_data:
+    driver: local
+  prometheus_prod_data:
+    driver: local
+  grafana_prod_data:
+    driver: local
+
+networks:
+  crm-prod-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16

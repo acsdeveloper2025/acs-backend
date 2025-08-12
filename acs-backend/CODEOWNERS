@@ -1,0 +1,18 @@
+# Global Owners
+* @acs-team
+
+# Backend specific
+/src/ @acs-backend-team
+/prisma/ @acs-backend-team @acs-database-team
+/scripts/ @acs-backend-team
+
+# Configuration files
+/.github/ @acs-devops-team
+/package.json @acs-backend-team
+/package-lock.json @acs-backend-team
+/.env.example @acs-backend-team
+/docker* @acs-devops-team
+
+# Documentation
+/README.md @acs-team
+/docs/ @acs-team
