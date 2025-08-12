@@ -8,6 +8,7 @@ import { connectDatabase, disconnectDatabase } from '@/config/database';
 import { connectRedis, disconnectRedis } from '@/config/redis';
 import { initializeQueues, closeQueues } from '@/config/queue';
 import { initializeWebSocket } from '@/websocket/server';
+import { runMigrations } from '@/migrations/migrate';
 
 const server = createServer(app);
 
@@ -26,7 +27,10 @@ const startServer = async (): Promise<void> => {
   try {
     // Connect to database
     await connectDatabase();
-    
+
+    // Run database migrations
+    await runMigrations();
+
     // Connect to Redis
     await connectRedis();
     

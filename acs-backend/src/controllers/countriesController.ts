@@ -1,78 +1,106 @@
 import { Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import { query } from '@/config/db';
 
-// Mock data for countries (in production, this would come from database)
-const countries = [
-  // Major Countries
-  { id: 'country_1', name: 'India', code: 'IN', continent: 'Asia', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_2', name: 'United States', code: 'US', continent: 'North America', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_3', name: 'United Kingdom', code: 'GB', continent: 'Europe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_4', name: 'Canada', code: 'CA', continent: 'North America', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_5', name: 'Australia', code: 'AU', continent: 'Oceania', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_6', name: 'Germany', code: 'DE', continent: 'Europe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_7', name: 'France', code: 'FR', continent: 'Europe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_8', name: 'Japan', code: 'JP', continent: 'Asia', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_9', name: 'China', code: 'CN', continent: 'Asia', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: 'country_10', name: 'Brazil', code: 'BR', continent: 'South America', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-];
+interface Country {
+  id: string;
+  name: string;
+  code: string;
+  continent: string;
+  created_at: string;
+  updated_at: string;
+}
 
 // GET /api/countries - List countries with pagination and filters
 export const getCountries = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      continent, 
-      search, 
-      sortBy = 'name', 
-      sortOrder = 'asc' 
+    const {
+      page = 1,
+      limit = 20,
+      continent,
+      search,
+      sortBy = 'name',
+      sortOrder = 'asc'
     } = req.query;
 
-    let filteredCountries = [...countries];
+    // Build SQL query with filters
+    let sql = 'SELECT * FROM countries WHERE 1=1';
+    const params: any[] = [];
+    let paramCount = 0;
 
     // Apply filters
     if (continent) {
-      filteredCountries = filteredCountries.filter(country => country.continent === continent);
+      paramCount++;
+      sql += ` AND continent = $${paramCount}`;
+      params.push(continent);
     }
+
     if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredCountries = filteredCountries.filter(country => 
-        country.name.toLowerCase().includes(searchTerm) ||
-        country.code.toLowerCase().includes(searchTerm)
-      );
+      paramCount++;
+      sql += ` AND (LOWER(name) LIKE $${paramCount} OR LOWER(code) LIKE $${paramCount})`;
+      params.push(`%${(search as string).toLowerCase()}%`);
     }
 
     // Apply sorting
-    filteredCountries.sort((a, b) => {
-      const aValue = a[sortBy as keyof typeof a];
-      const bValue = b[sortBy as keyof typeof b];
-      
-      if (sortOrder === 'desc') {
-        return bValue > aValue ? 1 : -1;
-      }
-      return aValue > bValue ? 1 : -1;
-    });
+    const validSortFields = ['name', 'code', 'continent', 'created_at', 'updated_at'];
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy : 'name';
+    const sortDirection = sortOrder === 'desc' ? 'DESC' : 'ASC';
+    sql += ` ORDER BY ${sortField} ${sortDirection}`;
 
     // Apply pagination
-    const startIndex = ((page as number) - 1) * (limit as number);
-    const endIndex = startIndex + (limit as number);
-    const paginatedCountries = filteredCountries.slice(startIndex, endIndex);
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const offset = (pageNum - 1) * limitNum;
 
-    logger.info(`Retrieved ${paginatedCountries.length} countries`, { 
+    paramCount++;
+    sql += ` LIMIT $${paramCount}`;
+    params.push(limitNum);
+
+    paramCount++;
+    sql += ` OFFSET $${paramCount}`;
+    params.push(offset);
+
+    // Execute query
+    const result = await query<Country>(sql, params);
+
+    // Get total count for pagination
+    let countSql = 'SELECT COUNT(*) FROM countries WHERE 1=1';
+    const countParams: any[] = [];
+    let countParamCount = 0;
+
+    if (continent) {
+      countParamCount++;
+      countSql += ` AND continent = $${countParamCount}`;
+      countParams.push(continent);
+    }
+
+    if (search) {
+      countParamCount++;
+      countSql += ` AND (LOWER(name) LIKE $${countParamCount} OR LOWER(code) LIKE $${countParamCount})`;
+      countParams.push(`%${(search as string).toLowerCase()}%`);
+    }
+
+    const countResult = await query<{ count: string }>(countSql, countParams);
+    const totalCount = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    logger.info(`Retrieved ${result.rows.length} countries`, {
       userId: req.user?.id,
       filters: { continent, search },
-      pagination: { page, limit }
+      pagination: { page: pageNum, limit: limitNum }
     });
 
     res.json({
       success: true,
-      data: paginatedCountries,
+      data: result.rows,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total: filteredCountries.length,
-        totalPages: Math.ceil(filteredCountries.length / (limit as number)),
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        pages: totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
       },
     });
   } catch (error) {
@@ -90,8 +118,12 @@ export const getCountryById = async (req: AuthenticatedRequest, res: Response) =
   try {
     const { id } = req.params;
 
-    const country = countries.find(c => c.id === id);
-    if (!country) {
+    const result = await query<Country>(
+      'SELECT * FROM countries WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Country not found',
@@ -99,7 +131,9 @@ export const getCountryById = async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    logger.info(`Retrieved country: ${country.name}`, { 
+    const country = result.rows[0];
+
+    logger.info(`Retrieved country: ${country.name}`, {
       userId: req.user?.id,
       countryId: id
     });
@@ -124,28 +158,28 @@ export const createCountry = async (req: AuthenticatedRequest, res: Response) =>
     const { name, code, continent } = req.body;
 
     // Check if country code already exists
-    const existingCountry = countries.find(c => c.code === code);
-    if (existingCountry) {
+    const existingResult = await query<Country>(
+      'SELECT id FROM countries WHERE code = $1 OR name = $2',
+      [code.toUpperCase(), name]
+    );
+
+    if (existingResult.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Country code already exists',
-        error: { code: 'DUPLICATE_CODE' },
+        message: 'Country code or name already exists',
+        error: { code: 'DUPLICATE_ENTRY' },
       });
     }
 
     // Create new country
-    const newCountry = {
-      id: `country_${Date.now()}`,
-      name,
-      code: code.toUpperCase(),
-      continent,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const result = await query<Country>(
+      'INSERT INTO countries (name, code, continent) VALUES ($1, $2, $3) RETURNING *',
+      [name, code.toUpperCase(), continent]
+    );
 
-    countries.push(newCountry);
+    const newCountry = result.rows[0];
 
-    logger.info(`Created new country: ${newCountry.name}`, { 
+    logger.info(`Created new country: ${newCountry.name}`, {
       userId: req.user?.id,
       countryId: newCountry.id,
       countryData: newCountry
@@ -172,8 +206,13 @@ export const updateCountry = async (req: AuthenticatedRequest, res: Response) =>
     const { id } = req.params;
     const updateData = req.body;
 
-    const countryIndex = countries.findIndex(c => c.id === id);
-    if (countryIndex === -1) {
+    // Check if country exists
+    const countryResult = await query<Country>(
+      'SELECT * FROM countries WHERE id = $1',
+      [id]
+    );
+
+    if (countryResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Country not found',
@@ -183,10 +222,12 @@ export const updateCountry = async (req: AuthenticatedRequest, res: Response) =>
 
     // Check for duplicate code if being updated
     if (updateData.code) {
-      const existingCountry = countries.find(c => 
-        c.id !== id && c.code === updateData.code.toUpperCase()
+      const existingResult = await query<Country>(
+        'SELECT id FROM countries WHERE code = $1 AND id != $2',
+        [updateData.code.toUpperCase(), id]
       );
-      if (existingCountry) {
+
+      if (existingResult.rows.length > 0) {
         return res.status(400).json({
           success: false,
           message: 'Country code already exists',
@@ -195,17 +236,52 @@ export const updateCountry = async (req: AuthenticatedRequest, res: Response) =>
       }
     }
 
-    // Update country
-    const updatedCountry = {
-      ...countries[countryIndex],
-      ...updateData,
-      code: updateData.code ? updateData.code.toUpperCase() : countries[countryIndex].code,
-      updatedAt: new Date().toISOString(),
-    };
+    // Build update query
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramCount = 0;
 
-    countries[countryIndex] = updatedCountry;
+    if (updateData.name) {
+      paramCount++;
+      updateFields.push(`name = $${paramCount}`);
+      updateValues.push(updateData.name);
+    }
 
-    logger.info(`Updated country: ${updatedCountry.name}`, { 
+    if (updateData.code) {
+      paramCount++;
+      updateFields.push(`code = $${paramCount}`);
+      updateValues.push(updateData.code.toUpperCase());
+    }
+
+    if (updateData.continent) {
+      paramCount++;
+      updateFields.push(`continent = $${paramCount}`);
+      updateValues.push(updateData.continent);
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields to update',
+        error: { code: 'NO_UPDATE_FIELDS' },
+      });
+    }
+
+    // Add updated_at
+    paramCount++;
+    updateFields.push(`updated_at = $${paramCount}`);
+    updateValues.push(new Date().toISOString());
+
+    // Add id for WHERE clause
+    paramCount++;
+    updateValues.push(id);
+
+    const updateSql = `UPDATE countries SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    const result = await query<Country>(updateSql, updateValues);
+
+    const updatedCountry = result.rows[0];
+
+    logger.info(`Updated country: ${updatedCountry.name}`, {
       userId: req.user?.id,
       countryId: id,
       updateData
@@ -231,8 +307,13 @@ export const deleteCountry = async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { id } = req.params;
 
-    const countryIndex = countries.findIndex(c => c.id === id);
-    if (countryIndex === -1) {
+    // Check if country exists
+    const countryResult = await query<Country>(
+      'SELECT * FROM countries WHERE id = $1',
+      [id]
+    );
+
+    if (countryResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Country not found',
@@ -240,20 +321,27 @@ export const deleteCountry = async (req: AuthenticatedRequest, res: Response) =>
       });
     }
 
-    // TODO: In production, check for associated states before deletion
-    // const statesCount = await getStatesCountByCountry(id);
-    // if (statesCount > 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: `Cannot delete country. This country has ${statesCount} associated state(s).`,
-    //     error: { code: 'HAS_DEPENDENCIES' }
-    //   });
-    // }
+    // Check for associated states before deletion
+    const statesResult = await query<{ count: string }>(
+      'SELECT COUNT(*) FROM states WHERE country_id = $1',
+      [id]
+    );
 
-    const deletedCountry = countries[countryIndex];
-    countries.splice(countryIndex, 1);
+    const statesCount = parseInt(statesResult.rows[0].count, 10);
+    if (statesCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete country. This country has ${statesCount} associated state(s).`,
+        error: { code: 'HAS_DEPENDENCIES' }
+      });
+    }
 
-    logger.info(`Deleted country: ${deletedCountry.name}`, { 
+    const deletedCountry = countryResult.rows[0];
+
+    // Delete the country
+    await query('DELETE FROM countries WHERE id = $1', [id]);
+
+    logger.info(`Deleted country: ${deletedCountry.name}`, {
       userId: req.user?.id,
       countryId: id
     });
@@ -275,9 +363,19 @@ export const deleteCountry = async (req: AuthenticatedRequest, res: Response) =>
 // GET /api/countries/stats - Get countries statistics
 export const getCountriesStats = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const totalCountries = countries.length;
-    const countriesByContinent = countries.reduce((acc, country) => {
-      acc[country.continent] = (acc[country.continent] || 0) + 1;
+    // Get total countries
+    const totalResult = await query<{ count: string }>(
+      'SELECT COUNT(*) FROM countries'
+    );
+    const totalCountries = parseInt(totalResult.rows[0].count, 10);
+
+    // Get countries by continent
+    const continentResult = await query<{ continent: string; count: string }>(
+      'SELECT continent, COUNT(*) FROM countries GROUP BY continent ORDER BY continent'
+    );
+
+    const countriesByContinent = continentResult.rows.reduce((acc, row) => {
+      acc[row.continent] = parseInt(row.count, 10);
       return acc;
     }, {} as Record<string, number>);
 
