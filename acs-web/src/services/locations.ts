@@ -1,7 +1,10 @@
 import { apiService } from './api';
-import type { 
-  City, 
+import type {
+  State,
+  City,
   Pincode,
+  CreateStateData,
+  UpdateStateData,
   CreateCityData,
   UpdateCityData,
   CreatePincodeData,
@@ -16,6 +19,31 @@ export interface LocationQuery extends PaginationQuery {
 }
 
 export class LocationsService {
+  // State operations
+  async getStates(query: LocationQuery = {}): Promise<ApiResponse<State[]>> {
+    return apiService.get('/states', query);
+  }
+
+  async getStateById(id: string): Promise<ApiResponse<State>> {
+    return apiService.get(`/states/${id}`);
+  }
+
+  async createState(data: CreateStateData): Promise<ApiResponse<State>> {
+    return apiService.post('/states', data);
+  }
+
+  async updateState(id: string, data: UpdateStateData): Promise<ApiResponse<State>> {
+    return apiService.put(`/states/${id}`, data);
+  }
+
+  async deleteState(id: string): Promise<ApiResponse<void>> {
+    return apiService.delete(`/states/${id}`);
+  }
+
+  async getStatesByCountry(country: string): Promise<ApiResponse<State[]>> {
+    return this.getStates({ country });
+  }
+
   // City operations
   async getCities(query: LocationQuery = {}): Promise<ApiResponse<City[]>> {
     return apiService.get('/cities', query);
@@ -101,8 +129,24 @@ export class LocationsService {
     return response.json();
   }
 
+  // Bulk operations for states
+  async bulkImportStates(file: File): Promise<ApiResponse<any>> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/states/bulk-import`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+      },
+      body: formData,
+    });
+
+    return response.json();
+  }
+
   // Utility functions
-  async getStates(): Promise<ApiResponse<string[]>> {
+  async getStateNames(): Promise<ApiResponse<string[]>> {
     return apiService.get('/locations/states');
   }
 

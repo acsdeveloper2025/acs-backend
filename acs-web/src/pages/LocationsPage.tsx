@@ -14,23 +14,35 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { locationsService } from '@/services/locations';
+import { StatesTable } from '@/components/locations/StatesTable';
 import { CitiesTable } from '@/components/locations/CitiesTable';
 import { PincodesTable } from '@/components/locations/PincodesTable';
+import { CreateStateDialog } from '@/components/locations/CreateStateDialog';
 import { CreateCityDialog } from '@/components/locations/CreateCityDialog';
 import { CreatePincodeDialog } from '@/components/locations/CreatePincodeDialog';
 import { BulkImportLocationDialog } from '@/components/locations/BulkImportLocationDialog';
 
 export function LocationsPage() {
-  const [activeTab, setActiveTab] = useState('cities');
+  const [activeTab, setActiveTab] = useState('states');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
+  const [showCreateState, setShowCreateState] = useState(false);
   const [showCreateCity, setShowCreateCity] = useState(false);
   const [showCreatePincode, setShowCreatePincode] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
-  const [bulkImportType, setBulkImportType] = useState<'cities' | 'pincodes'>('cities');
+  const [bulkImportType, setBulkImportType] = useState<'states' | 'cities' | 'pincodes'>('states');
 
   // Fetch data based on active tab and filters
+  const { data: statesData, isLoading: statesLoading } = useQuery({
+    queryKey: ['states', searchQuery, selectedCountry],
+    queryFn: () => locationsService.getStates({
+      search: searchQuery,
+      country: selectedCountry !== 'all' ? selectedCountry : undefined,
+    }),
+    enabled: activeTab === 'states',
+  });
+
   const { data: citiesData, isLoading: citiesLoading } = useQuery({
     queryKey: ['cities', searchQuery, selectedState, selectedCountry],
     queryFn: () => locationsService.getCities({
@@ -47,10 +59,10 @@ export function LocationsPage() {
     enabled: activeTab === 'pincodes',
   });
 
-  // Fetch states and countries for filters
-  const { data: statesData } = useQuery({
-    queryKey: ['states'],
-    queryFn: () => locationsService.getStates(),
+  // Fetch state names and countries for filters
+  const { data: stateNamesData } = useQuery({
+    queryKey: ['state-names'],
+    queryFn: () => locationsService.getStateNames(),
   });
 
   const { data: countriesData } = useQuery({
@@ -58,7 +70,7 @@ export function LocationsPage() {
     queryFn: () => locationsService.getCountries(),
   });
 
-  const handleBulkImport = (type: 'cities' | 'pincodes') => {
+  const handleBulkImport = (type: 'states' | 'cities' | 'pincodes') => {
     setBulkImportType(type);
     setShowBulkImport(true);
   };
@@ -71,13 +83,14 @@ export function LocationsPage() {
 
   const getTabStats = () => {
     return {
+      states: statesData?.data?.length || 0,
       cities: citiesData?.data?.length || 0,
       pincodes: pincodesData?.data?.length || 0,
     };
   };
 
   const stats = getTabStats();
-  const states = statesData?.data || [];
+  const stateNames = stateNamesData?.data || [];
   const countries = countriesData?.data || [];
 
   return (
@@ -93,7 +106,19 @@ export function LocationsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total States</CardTitle>
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.states}</div>
+            <p className="text-xs text-muted-foreground">
+              Across all countries
+            </p>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Cities</CardTitle>
@@ -136,6 +161,14 @@ export function LocationsPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <div className="flex items-center justify-between">
               <TabsList>
+                <TabsTrigger value="states">
+                  States
+                  {stats.states > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {stats.states}
+                    </Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="cities">
                   Cities
                   {stats.cities > 0 && (
@@ -156,6 +189,26 @@ export function LocationsPage() {
 
               {/* Actions */}
               <div className="flex items-center space-x-2">
+                {activeTab === 'states' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkImport('states')}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import States
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowCreateState(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add State
+                    </Button>
+                  </>
+                )}
+
                 {activeTab === 'cities' && (
                   <>
                     <Button
@@ -209,37 +262,37 @@ export function LocationsPage() {
                   className="pl-8"
                 />
               </div>
-              
-              {activeTab === 'cities' && (
-                <>
-                  <Select value={selectedState} onValueChange={setSelectedState}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Filter by state" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All States</SelectItem>
-                      {states.map((state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
 
-                  <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Filter by country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Countries</SelectItem>
-                      {countries.map((country) => (
-                        <SelectItem key={country} value={country}>
-                          {country}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </>
+              {(activeTab === 'states' || activeTab === 'cities') && (
+                <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Countries</SelectItem>
+                    {countries.map((country) => (
+                      <SelectItem key={country} value={country}>
+                        {country}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {activeTab === 'cities' && (
+                <Select value={selectedState} onValueChange={setSelectedState}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by state" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All States</SelectItem>
+                    {stateNames.map((state) => (
+                      <SelectItem key={state} value={state}>
+                        {state}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
 
               {(searchQuery || selectedState !== 'all' || selectedCountry !== 'all') && (
@@ -248,6 +301,13 @@ export function LocationsPage() {
                 </Button>
               )}
             </div>
+
+            <TabsContent value="states" className="space-y-4">
+              <StatesTable
+                data={statesData?.data || []}
+                isLoading={statesLoading}
+              />
+            </TabsContent>
 
             <TabsContent value="cities" className="space-y-4">
               <CitiesTable
@@ -267,16 +327,21 @@ export function LocationsPage() {
       </Card>
 
       {/* Dialogs */}
+      <CreateStateDialog
+        open={showCreateState}
+        onOpenChange={setShowCreateState}
+      />
+
       <CreateCityDialog
         open={showCreateCity}
         onOpenChange={setShowCreateCity}
       />
-      
+
       <CreatePincodeDialog
         open={showCreatePincode}
         onOpenChange={setShowCreatePincode}
       />
-      
+
       <BulkImportLocationDialog
         open={showBulkImport}
         onOpenChange={setShowBulkImport}

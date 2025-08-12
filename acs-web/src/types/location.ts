@@ -1,3 +1,13 @@
+export interface State {
+  id: string;
+  name: string;
+  code: string;
+  country: string;
+  createdAt: string;
+  updatedAt: string;
+  cities?: City[];
+}
+
 export interface City {
   id: string;
   name: string;
@@ -16,6 +26,18 @@ export interface Pincode {
   createdAt: string;
   updatedAt: string;
   city?: City;
+}
+
+export interface CreateStateData {
+  name: string;
+  code: string;
+  country: string;
+}
+
+export interface UpdateStateData {
+  name?: string;
+  code?: string;
+  country?: string;
 }
 
 export interface CreateCityData {
