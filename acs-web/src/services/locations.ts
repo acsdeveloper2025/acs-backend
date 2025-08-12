@@ -199,9 +199,7 @@ export class LocationsService {
     return apiService.get('/locations/states');
   }
 
-  async getCountries(): Promise<ApiResponse<string[]>> {
-    return apiService.get('/locations/countries');
-  }
+
 }
 
 export const locationsService = new LocationsService();

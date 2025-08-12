@@ -107,6 +107,13 @@ export const navigationItems: NavigationItem[] = [
     roles: ['ADMIN'],
     children: [
       {
+        id: 'countries',
+        label: 'Countries',
+        href: '/locations?tab=countries',
+        icon: MapPin,
+        roles: ['ADMIN'],
+      },
+      {
         id: 'states',
         label: 'States',
         href: '/locations?tab=states',
