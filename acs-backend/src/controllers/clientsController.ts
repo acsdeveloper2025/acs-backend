@@ -205,7 +205,7 @@ export const createClient = async (req: AuthenticatedRequest, res: Response) => 
     const newClient = await withTransaction(async (cx) => {
       // Create client
       const clientIns = await cx.query(
-        `INSERT INTO clients (id, name, code, "createdAt") VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP) RETURNING id, name, code, "createdAt", "updatedAt"`,
+        `INSERT INTO clients (id, name, code, "createdAt", "updatedAt") VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id, name, code, "createdAt", "updatedAt"`,
         [name, code]
       );
       const created = clientIns.rows[0];
@@ -219,7 +219,7 @@ export const createClient = async (req: AuthenticatedRequest, res: Response) => 
         }
         for (const pid of uniqueProductIds) {
           await cx.query(
-            `INSERT INTO client_products (id, "clientId", "productId", "isActive", "createdAt") VALUES (gen_random_uuid()::text, $1, $2, true, CURRENT_TIMESTAMP)`,
+            `INSERT INTO client_products (id, "clientId", "productId", "isActive", "createdAt", "updatedAt") VALUES (gen_random_uuid()::text, $1, $2, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
             [created.id, pid]
           );
         }
@@ -234,7 +234,7 @@ export const createClient = async (req: AuthenticatedRequest, res: Response) => 
         }
         for (const vt of uniqueVerificationTypeIds) {
           await cx.query(
-            `INSERT INTO client_verification_types (id, "clientId", "verificationTypeId", "isActive", "createdAt") VALUES (gen_random_uuid()::text, $1, $2, true, CURRENT_TIMESTAMP)`,
+            `INSERT INTO client_verification_types (id, "clientId", "verificationTypeId", "isActive", "createdAt", "updatedAt") VALUES (gen_random_uuid()::text, $1, $2, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
             [created.id, vt]
           );
         }
@@ -413,6 +413,24 @@ export const deleteClient = async (req: AuthenticatedRequest, res: Response) => 
         success: false,
         message: 'Client not found',
         error: { code: 'NOT_FOUND' },
+      });
+    }
+
+    // Check if client has associated cases
+    const casesRes = await query(`SELECT COUNT(*)::int as count FROM cases WHERE "clientId" = $1`, [id]);
+    const caseCount = casesRes.rows[0]?.count || 0;
+
+    if (caseCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete client. This client has ${caseCount} associated case(s). Please delete or reassign the cases first.`,
+        error: {
+          code: 'HAS_DEPENDENCIES',
+          details: {
+            dependencyType: 'cases',
+            count: caseCount
+          }
+        },
       });
     }
 

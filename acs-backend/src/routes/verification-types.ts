@@ -1,13 +1,14 @@
 import express from 'express';
 import { body, query, param } from 'express-validator';
 import { authenticateToken } from '@/middleware/auth';
-import { validate } from '@/middleware/validation';
+import { handleValidationErrors } from '@/middleware/validation';
 import {
   getVerificationTypes,
   getVerificationTypeById,
   createVerificationType,
   updateVerificationType,
-  deleteVerificationType
+  deleteVerificationType,
+  getVerificationTypeStats
 } from '@/controllers/verificationTypesController';
 
 const router = express.Router();
@@ -92,19 +93,19 @@ const listVerificationTypesValidation = [
 // ];
 
 // Core CRUD routes
-router.get('/', 
-  listVerificationTypesValidation, 
-  validate, 
+router.get('/',
+  listVerificationTypesValidation,
+  handleValidationErrors,
   getVerificationTypes
 );
 
 // TODO: Implement these endpoints
 // router.get('/categories', getVerificationTypeCategories);
-// router.get('/stats', getVerificationTypeStats);
+router.get('/stats', getVerificationTypeStats);
 
 router.post('/',
   createVerificationTypeValidation,
-  validate,
+  handleValidationErrors,
   createVerificationType
 );
 
@@ -115,22 +116,22 @@ router.post('/',
 //   bulkImportVerificationTypes
 // );
 
-router.get('/:id', 
-  [param('id').trim().notEmpty().withMessage('Verification type ID is required')], 
-  validate, 
+router.get('/:id',
+  [param('id').trim().notEmpty().withMessage('Verification type ID is required')],
+  handleValidationErrors,
   getVerificationTypeById
 );
 
-router.put('/:id', 
-  [param('id').trim().notEmpty().withMessage('Verification type ID is required')], 
-  updateVerificationTypeValidation, 
-  validate, 
+router.put('/:id',
+  [param('id').trim().notEmpty().withMessage('Verification type ID is required')],
+  updateVerificationTypeValidation,
+  handleValidationErrors,
   updateVerificationType
 );
 
-router.delete('/:id', 
-  [param('id').trim().notEmpty().withMessage('Verification type ID is required')], 
-  validate, 
+router.delete('/:id',
+  [param('id').trim().notEmpty().withMessage('Verification type ID is required')],
+  handleValidationErrors,
   deleteVerificationType
 );
 
