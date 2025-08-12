@@ -11,6 +11,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -35,6 +45,8 @@ export function StatesTable({ data, isLoading }: StatesTableProps) {
   const [selectedState, setSelectedState] = useState<State | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [stateToDelete, setStateToDelete] = useState<State | null>(null);
   const queryClient = useQueryClient();
 
   const deleteStateMutation = useMutation({
@@ -42,6 +54,8 @@ export function StatesTable({ data, isLoading }: StatesTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['states'] });
       toast.success('State deleted successfully');
+      setShowDeleteDialog(false);
+      setStateToDelete(null);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to delete state');
@@ -58,9 +72,14 @@ export function StatesTable({ data, isLoading }: StatesTableProps) {
     setShowDetailsDialog(true);
   };
 
-  const handleDelete = async (state: State) => {
-    if (window.confirm(`Are you sure you want to delete "${state.name}"?`)) {
-      deleteStateMutation.mutate(state.id);
+  const handleDelete = (state: State) => {
+    setStateToDelete(state);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (stateToDelete) {
+      deleteStateMutation.mutate(stateToDelete.id);
     }
   };
 
@@ -166,6 +185,29 @@ export function StatesTable({ data, isLoading }: StatesTableProps) {
           />
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the state
+              "{stateToDelete?.name}" and all associated cities.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteStateMutation.isPending}
+            >
+              {deleteStateMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
