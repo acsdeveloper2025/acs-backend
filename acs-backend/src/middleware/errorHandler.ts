@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
+
 import { logger } from '@/config/logger';
 import { ApiResponse } from '@/types/api';
 
@@ -29,40 +29,7 @@ export const errorHandler = (
   let code = error.code || 'INTERNAL_ERROR';
   let details = error.details;
 
-  // Handle Prisma errors
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (error.code) {
-      case 'P2002':
-        statusCode = 409;
-        message = 'A record with this data already exists';
-        code = 'DUPLICATE_RECORD';
-        details = {
-          field: error.meta?.target,
-        };
-        break;
-      case 'P2025':
-        statusCode = 404;
-        message = 'Record not found';
-        code = 'NOT_FOUND';
-        break;
-      case 'P2003':
-        statusCode = 400;
-        message = 'Foreign key constraint failed';
-        code = 'FOREIGN_KEY_ERROR';
-        break;
-      default:
-        statusCode = 500;
-        message = 'Database error occurred';
-        code = 'DATABASE_ERROR';
-    }
-  }
 
-  // Handle Prisma validation errors
-  if (error instanceof Prisma.PrismaClientValidationError) {
-    statusCode = 400;
-    message = 'Invalid data provided';
-    code = 'VALIDATION_ERROR';
-  }
 
   // Handle JWT errors
   if (error.name === 'JsonWebTokenError') {

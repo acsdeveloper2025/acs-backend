@@ -7,11 +7,7 @@ import {
   getVerificationTypeById,
   createVerificationType,
   updateVerificationType,
-  deleteVerificationType,
-  getVerificationTypesByProduct,
-  getVerificationTypeCategories,
-  getVerificationTypeStats,
-  bulkImportVerificationTypes
+  deleteVerificationType
 } from '@/controllers/verificationTypesController';
 
 const router = express.Router();
@@ -31,44 +27,6 @@ const createVerificationTypeValidation = [
     .withMessage('Code must be between 2 and 50 characters')
     .matches(/^[A-Z0-9_]+$/)
     .withMessage('Code must contain only uppercase letters, numbers, and underscores'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 1000 })
-    .withMessage('Description must be less than 1000 characters'),
-  body('category')
-    .isIn(['ADDRESS_VERIFICATION', 'EMPLOYMENT_VERIFICATION', 'BUSINESS_VERIFICATION', 'IDENTITY_VERIFICATION', 'FINANCIAL_VERIFICATION', 'OTHER'])
-    .withMessage('Invalid category'),
-  body('requirements')
-    .optional()
-    .isArray()
-    .withMessage('Requirements must be an array'),
-  body('requirements.*')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 200 })
-    .withMessage('Each requirement must be between 1 and 200 characters'),
-  body('documents')
-    .optional()
-    .isArray()
-    .withMessage('Documents must be an array'),
-  body('documents.*')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Each document must be between 1 and 100 characters'),
-  body('estimatedTime')
-    .optional()
-    .isInt({ min: 1, max: 720 })
-    .withMessage('Estimated time must be between 1 and 720 hours'),
-  body('basePrice')
-    .optional()
-    .isNumeric()
-    .withMessage('Base price must be a number'),
-  body('isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('isActive must be a boolean'),
 ];
 
 const updateVerificationTypeValidation = [
@@ -84,45 +42,6 @@ const updateVerificationTypeValidation = [
     .withMessage('Code must be between 2 and 50 characters')
     .matches(/^[A-Z0-9_]+$/)
     .withMessage('Code must contain only uppercase letters, numbers, and underscores'),
-  body('description')
-    .optional()
-    .trim()
-    .isLength({ max: 1000 })
-    .withMessage('Description must be less than 1000 characters'),
-  body('category')
-    .optional()
-    .isIn(['ADDRESS_VERIFICATION', 'EMPLOYMENT_VERIFICATION', 'BUSINESS_VERIFICATION', 'IDENTITY_VERIFICATION', 'FINANCIAL_VERIFICATION', 'OTHER'])
-    .withMessage('Invalid category'),
-  body('requirements')
-    .optional()
-    .isArray()
-    .withMessage('Requirements must be an array'),
-  body('requirements.*')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 200 })
-    .withMessage('Each requirement must be between 1 and 200 characters'),
-  body('documents')
-    .optional()
-    .isArray()
-    .withMessage('Documents must be an array'),
-  body('documents.*')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Each document must be between 1 and 100 characters'),
-  body('estimatedTime')
-    .optional()
-    .isInt({ min: 1, max: 720 })
-    .withMessage('Estimated time must be between 1 and 720 hours'),
-  body('basePrice')
-    .optional()
-    .isNumeric()
-    .withMessage('Base price must be a number'),
-  body('isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('isActive must be a boolean'),
 ];
 
 const listVerificationTypesValidation = [
@@ -157,19 +76,20 @@ const listVerificationTypesValidation = [
     .withMessage('Sort order must be asc or desc'),
 ];
 
-const bulkImportValidation = [
-  body('verificationTypes')
-    .isArray({ min: 1 })
-    .withMessage('Verification types array is required'),
-  body('verificationTypes.*.name')
-    .trim()
-    .isLength({ min: 1, max: 200 })
-    .withMessage('Name is required and must be less than 200 characters'),
-  body('verificationTypes.*.code')
-    .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('Code is required and must be between 2 and 50 characters'),
-];
+// TODO: Implement bulk import validation when needed
+// const bulkImportValidation = [
+//   body('verificationTypes')
+//     .isArray({ min: 1 })
+//     .withMessage('Verification types array is required'),
+//   body('verificationTypes.*.name')
+//     .trim()
+//     .isLength({ min: 1, max: 200 })
+//     .withMessage('Name is required and must be less than 200 characters'),
+//   body('verificationTypes.*.code')
+//     .trim()
+//     .isLength({ min: 2, max: 50 })
+//     .withMessage('Code is required and must be between 2 and 50 characters'),
+// ];
 
 // Core CRUD routes
 router.get('/', 
@@ -178,21 +98,22 @@ router.get('/',
   getVerificationTypes
 );
 
-router.get('/categories', getVerificationTypeCategories);
+// TODO: Implement these endpoints
+// router.get('/categories', getVerificationTypeCategories);
+// router.get('/stats', getVerificationTypeStats);
 
-router.get('/stats', getVerificationTypeStats);
-
-router.post('/', 
-  createVerificationTypeValidation, 
-  validate, 
+router.post('/',
+  createVerificationTypeValidation,
+  validate,
   createVerificationType
 );
 
-router.post('/bulk-import', 
-  bulkImportValidation, 
-  validate, 
-  bulkImportVerificationTypes
-);
+// TODO: Implement bulk import endpoint
+// router.post('/bulk-import',
+//   bulkImportValidation,
+//   validate,
+//   bulkImportVerificationTypes
+// );
 
 router.get('/:id', 
   [param('id').trim().notEmpty().withMessage('Verification type ID is required')], 

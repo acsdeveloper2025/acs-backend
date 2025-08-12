@@ -1,3 +1,4 @@
+import 'module-alias/register';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import app from './app';

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '@/config/database';
+import { query } from '@/config/database';
 import { config } from '@/config';
 import { logger } from '@/config/logger';
 import { createError } from '@/middleware/errorHandler';
@@ -22,21 +22,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const { username, password, deviceId }: LoginRequest = req.body;
 
     // Find user by username
-    const user = await prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        passwordHash: true,
-        role: true,
-        employeeId: true,
-        designation: true,
-        department: true,
-        profilePhotoUrl: true,
-      },
-    });
+    const userRes = await query(
+      `SELECT id, name, username, email, "passwordHash", role, "employeeId", designation, department, "profilePhotoUrl"
+       FROM users WHERE username = $1`,
+      [username]
+    );
+    const user = userRes.rows[0];
 
     if (!user) {
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
@@ -70,17 +61,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     } as any);
 
     // Log successful login
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'LOGIN',
-        details: JSON.stringify({
-          deviceId,
-          ip: req.ip,
-          userAgent: req.get('User-Agent'),
-        }),
-      } as any,
-    });
+    await query(
+      `INSERT INTO audit_logs (id, "userId", action, details, "createdAt")
+       VALUES (gen_random_uuid()::text, $1, 'LOGIN', $2, CURRENT_TIMESTAMP)`,
+      [user.id, JSON.stringify({ deviceId, ip: req.ip, userAgent: req.get('User-Agent') })]
+    );
 
     const response: LoginResponse = {
       success: true,
@@ -118,17 +103,11 @@ export const logout = async (req: AuthenticatedRequest, res: Response): Promise<
     }
 
     // Log logout
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'LOGOUT',
-        details: JSON.stringify({
-          deviceId: req.user.deviceId,
-          ip: req.ip,
-          userAgent: req.get('User-Agent'),
-        }),
-      } as any,
-    });
+    await query(
+      `INSERT INTO audit_logs (id, "userId", action, details, "createdAt")
+       VALUES (gen_random_uuid()::text, $1, 'LOGOUT', $2, CURRENT_TIMESTAMP)`,
+      [req.user.id, JSON.stringify({ deviceId: req.user.deviceId, ip: req.ip, userAgent: req.get('User-Agent') })]
+    );
 
     const response: ApiResponse = {
       success: true,
@@ -146,27 +125,17 @@ export const registerDevice = async (req: Request, res: Response): Promise<void>
   try {
     const { deviceId, platform, model, osVersion, appVersion }: DeviceRegistrationRequest = req.body;
 
-    // Check if device already exists
-    const existingDevice = await prisma.device.findUnique({
-      where: { deviceId },
-    });
-
-    if (existingDevice) {
-      // Update existing device
-      await prisma.device.update({
-        where: { deviceId },
-        data: {
-          platform,
-          model,
-          osVersion,
-          appVersion,
-        },
-      });
-    }
+    // Upsert device
+    await query(
+      `INSERT INTO devices (id, "deviceId", platform, model, "osVersion", "appVersion", "createdAt")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       ON CONFLICT ("deviceId") DO UPDATE SET platform = EXCLUDED.platform, model = EXCLUDED.model, "osVersion" = EXCLUDED."osVersion", "appVersion" = EXCLUDED."appVersion", "updatedAt" = CURRENT_TIMESTAMP`,
+      [deviceId, platform, model, osVersion, appVersion]
+    );
 
     const response: DeviceRegistrationResponse = {
       success: true,
-      message: existingDevice ? 'Device updated successfully' : 'Device registration successful',
+      message: 'Device registration successful',
       data: {
         deviceId,
         registeredAt: new Date().toISOString(),

@@ -18,21 +18,21 @@ A production-ready Node.js backend service for the CaseFlow Mobile App, built wi
 - **Runtime**: Node.js 18+
 - **Language**: TypeScript
 - **Framework**: Express.js
-- **Database**: MySQL 8.0 with Prisma ORM
+- **Database**: SQL Server (LocalDB/Express or full) with Prisma ORM
 - **Cache/Queue**: Redis with BullMQ
 - **Authentication**: JWT tokens
 - **File Upload**: Multer with validation
 - **WebSocket**: Socket.IO
 - **Testing**: Jest with Supertest
-- **Containerization**: Docker & Docker Compose
 
 ## 📋 Prerequisites
 
 - Node.js (v18 or higher)
-- Docker & Docker Compose
+- SQL Server (Express/LocalDB or Developer edition)
+- Redis 7+
 - npm or yarn
 
-## 🚀 Quick Start with Docker
+## 🚀 Quick Start (Local, no Docker)
 
 1. **Clone the repository:**
 ```bash
@@ -40,26 +40,38 @@ git clone https://github.com/acsdeveloper2025/acs-backend.git
 cd acs-backend
 ```
 
-2. **Start all services:**
+2. **Install dependencies:**
 ```bash
-docker-compose up -d
+npm install
 ```
 
-3. **Run database migrations:**
+3. **Set up environment variables:**
 ```bash
-docker-compose exec backend npm run db:migrate
+cp .env.example .env
+# Ensure DATABASE_URL points to your local SQL Server (localhost:1433)
+# Ensure REDIS_URL is redis://localhost:6379
 ```
 
-4. **Seed the database:**
+4. **Ensure local services are running:**
+- SQL Server listening on localhost:1433 with database acs_backend
+- Redis on localhost:6379
+
+5. **Initialize database:**
 ```bash
-docker-compose exec backend npm run db:seed
+npm run db:migrate
+npm run db:seed
 ```
 
-5. **Access the application:**
+6. **Start the server:**
+```bash
+npm run dev
+# or
+npm run build && npm start
+```
+
+7. **Access:**
 - API: http://localhost:3000
-- Health Check: http://localhost:3000/health
-- Database Admin: http://localhost:8080 (Adminer)
-- Redis Admin: http://localhost:8081 (Redis Commander)
+- Health: http://localhost:3000/health
 
 ## 🔧 Local Development Setup
 
@@ -74,10 +86,7 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. **Start MySQL and Redis:**
-```bash
-docker-compose up mysql redis -d
-```
+3. Ensure SQL Server and Redis are installed and running locally (see below).
 
 4. **Run database migrations:**
 ```bash
@@ -228,15 +237,13 @@ npm run test:watch
 - `notification` - Push notification
 - `broadcast` - Role-based broadcast message
 
-## 🐳 Docker Services
+## 🖥️ Local Services
 
 | Service | Port | Description |
 |---------|------|-------------|
 | backend | 3000 | Main application server |
-| mysql | 3306 | MySQL database |
+| sqlserver | 1433 | SQL Server database |
 | redis | 6379 | Redis cache and queue |
-| adminer | 8080 | Database administration |
-| redis-commander | 8081 | Redis administration |
 
 ## 📊 Database Schema
 
@@ -252,13 +259,8 @@ The application uses the following main entities:
 
 ## 🚀 Deployment
 
-### Production Build
-```bash
-docker build -t acs-backend:latest .
-```
-
 ### Environment Variables
-Ensure all required environment variables are set in production:
+Ensure required variables are set in your local .env:
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `JWT_REFRESH_SECRET`

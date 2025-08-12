@@ -1,98 +1,7 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
-
-// Mock data for demonstration (replace with actual database operations)
-let verificationTypes: any[] = [
-  {
-    id: 'vtype_1',
-    name: 'Residence Verification',
-    code: 'RESIDENCE',
-    description: 'Verification of residential address and occupancy status',
-    category: 'ADDRESS_VERIFICATION',
-    isActive: true,
-    requirements: [
-      'Valid address proof',
-      'Occupancy verification',
-      'Neighbor confirmation'
-    ],
-    documents: [
-      'Aadhaar Card',
-      'Utility Bills',
-      'Rent Agreement'
-    ],
-    estimatedTime: 24, // hours
-    basePrice: 300,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  },
-  {
-    id: 'vtype_2',
-    name: 'Office Verification',
-    code: 'OFFICE',
-    description: 'Verification of office premises and business operations',
-    category: 'BUSINESS_VERIFICATION',
-    isActive: true,
-    requirements: [
-      'Office address verification',
-      'Business operation confirmation',
-      'Employee verification'
-    ],
-    documents: [
-      'Business Registration',
-      'Office Lease Agreement',
-      'GST Certificate'
-    ],
-    estimatedTime: 48, // hours
-    basePrice: 500,
-    createdAt: '2024-01-02T00:00:00.000Z',
-    updatedAt: '2024-01-02T00:00:00.000Z',
-  },
-  {
-    id: 'vtype_3',
-    name: 'Employment Verification',
-    code: 'EMPLOYMENT',
-    description: 'Verification of employment status and salary details',
-    category: 'EMPLOYMENT_VERIFICATION',
-    isActive: true,
-    requirements: [
-      'Employment confirmation',
-      'Salary verification',
-      'Designation confirmation'
-    ],
-    documents: [
-      'Salary Slips',
-      'Employment Letter',
-      'Bank Statements'
-    ],
-    estimatedTime: 24, // hours
-    basePrice: 400,
-    createdAt: '2024-01-03T00:00:00.000Z',
-    updatedAt: '2024-01-03T00:00:00.000Z',
-  },
-  {
-    id: 'vtype_4',
-    name: 'Business Verification',
-    code: 'BUSINESS',
-    description: 'Comprehensive business and financial verification',
-    category: 'BUSINESS_VERIFICATION',
-    isActive: true,
-    requirements: [
-      'Business registration verification',
-      'Financial status check',
-      'Operational verification'
-    ],
-    documents: [
-      'Business License',
-      'Financial Statements',
-      'Tax Returns'
-    ],
-    estimatedTime: 72, // hours
-    basePrice: 800,
-    createdAt: '2024-01-04T00:00:00.000Z',
-    updatedAt: '2024-01-04T00:00:00.000Z',
-  },
-];
+import { query } from '@/config/database';
 
 // GET /api/verification-types - List verification types with pagination and filters
 export const getVerificationTypes = async (req: AuthenticatedRequest, res: Response) => {
@@ -100,60 +9,38 @@ export const getVerificationTypes = async (req: AuthenticatedRequest, res: Respo
     const { 
       page = 1, 
       limit = 20, 
-      category, 
-      isActive, 
       search, 
       sortBy = 'name', 
       sortOrder = 'asc' 
     } = req.query;
 
-    let filteredTypes = [...verificationTypes];
+    // Build where clause
+    const whereClause: any = {};
 
-    // Apply filters
-    if (category) {
-      filteredTypes = filteredTypes.filter(vt => vt.category === category);
-    }
-    if (isActive !== undefined) {
-      filteredTypes = filteredTypes.filter(vt => vt.isActive === (isActive === 'true'));
-    }
-    if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredTypes = filteredTypes.filter(vt => 
-        vt.name.toLowerCase().includes(searchTerm) ||
-        vt.code.toLowerCase().includes(searchTerm) ||
-        vt.description.toLowerCase().includes(searchTerm)
-      );
-    }
+    // Get total count
+    const countRes = await query<{ count: string }>(`SELECT COUNT(*)::text as count FROM verification_types`);
+    const totalCount = Number(countRes.rows[0]?.count || 0);
 
-    // Apply sorting
-    filteredTypes.sort((a, b) => {
-      const aValue = a[sortBy as string];
-      const bValue = b[sortBy as string];
-      if (sortOrder === 'desc') {
-        return bValue > aValue ? 1 : -1;
-      }
-      return aValue > bValue ? 1 : -1;
-    });
+    // Get verification types with pagination
+    const vtRes = await query(`SELECT * FROM verification_types ORDER BY ${sortBy} ${sortOrder} LIMIT $1 OFFSET $2`, [Number(limit), (Number(page) - 1) * Number(limit)]);
+    const verificationTypes = vtRes.rows;
 
-    // Apply pagination
-    const startIndex = ((page as number) - 1) * (limit as number);
-    const endIndex = startIndex + (limit as number);
-    const paginatedTypes = filteredTypes.slice(startIndex, endIndex);
-
-    logger.info(`Retrieved ${paginatedTypes.length} verification types`, { 
+    logger.info(`Retrieved ${verificationTypes.length} verification types from database`, {
       userId: req.user?.id,
-      filters: { category, isActive, search },
-      pagination: { page, limit }
+      page: Number(page),
+      limit: Number(limit),
+      search: search || '',
+      total: totalCount
     });
 
     res.json({
       success: true,
-      data: paginatedTypes,
+      data: verificationTypes,
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total: filteredTypes.length,
-        totalPages: Math.ceil(filteredTypes.length / (limit as number)),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit)),
       },
     });
   } catch (error) {
@@ -170,8 +57,9 @@ export const getVerificationTypes = async (req: AuthenticatedRequest, res: Respo
 export const getVerificationTypeById = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const verificationType = verificationTypes.find(vt => vt.id === id);
-
+    
+    const vtRes2 = await query(`SELECT * FROM verification_types WHERE id = $1`, [id]);
+    const verificationType = vtRes2.rows[0];
     if (!verificationType) {
       return res.status(404).json({
         success: false,
@@ -199,21 +87,16 @@ export const getVerificationTypeById = async (req: AuthenticatedRequest, res: Re
 // POST /api/verification-types - Create new verification type
 export const createVerificationType = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { 
-      name, 
-      code, 
-      description, 
-      category, 
-      requirements, 
-      documents, 
-      estimatedTime, 
-      basePrice, 
-      isActive = true 
+    const {
+      name,
+      code
     } = req.body;
 
     // Check if verification type code already exists
-    const existingType = verificationTypes.find(vt => vt.code === code);
-    if (existingType) {
+    const exRes = await query(`SELECT id FROM verification_types WHERE code = $1`, [code]);
+    const existingVerificationType = exRes.rows[0];
+
+    if (existingVerificationType) {
       return res.status(400).json({
         success: false,
         message: 'Verification type code already exists',
@@ -221,27 +104,17 @@ export const createVerificationType = async (req: AuthenticatedRequest, res: Res
       });
     }
 
-    const newVerificationType = {
-      id: `vtype_${Date.now()}`,
-      name,
-      code,
-      description,
-      category,
-      requirements: requirements || [],
-      documents: documents || [],
-      estimatedTime: estimatedTime || 24,
-      basePrice: basePrice || 0,
-      isActive,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Create verification type in database
+    const newRes = await query(
+      `INSERT INTO verification_types (id, name, code, "createdAt", "updatedAt") VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING *`,
+      [name, code]
+    );
+    const newVerificationType = newRes.rows[0];
 
-    verificationTypes.push(newVerificationType);
-
-    logger.info(`Created new verification type: ${newVerificationType.id}`, { 
+    logger.info(`Created new verification type: ${newVerificationType.id}`, {
       userId: req.user?.id,
-      typeName: name,
-      typeCode: code
+      verificationTypeName: name,
+      verificationTypeCode: code
     });
 
     res.status(201).json({
@@ -265,8 +138,11 @@ export const updateVerificationType = async (req: AuthenticatedRequest, res: Res
     const { id } = req.params;
     const updateData = req.body;
 
-    const typeIndex = verificationTypes.findIndex(vt => vt.id === id);
-    if (typeIndex === -1) {
+    // Check if verification type exists
+    const exRes2 = await query(`SELECT * FROM verification_types WHERE id = $1`, [id]);
+    const existingVerificationType = exRes2.rows[0];
+
+    if (!existingVerificationType) {
       return res.status(404).json({
         success: false,
         message: 'Verification type not found',
@@ -275,9 +151,11 @@ export const updateVerificationType = async (req: AuthenticatedRequest, res: Res
     }
 
     // Check for duplicate code if being updated
-    if (updateData.code) {
-      const existingType = verificationTypes.find(vt => vt.id !== id && vt.code === updateData.code);
-      if (existingType) {
+    if (updateData.code && updateData.code !== existingVerificationType.code) {
+      const dupRes = await query(`SELECT id FROM verification_types WHERE code = $1`, [updateData.code]);
+      const duplicateVerificationType = dupRes.rows[0];
+
+      if (duplicateVerificationType) {
         return res.status(400).json({
           success: false,
           message: 'Verification type code already exists',
@@ -286,23 +164,34 @@ export const updateVerificationType = async (req: AuthenticatedRequest, res: Res
       }
     }
 
+    // Prepare update data
+    const updatePayload: any = {};
+
+    if (updateData.name) updatePayload.name = updateData.name;
+    if (updateData.code) updatePayload.code = updateData.code;
+
     // Update verification type
-    const updatedType = {
-      ...verificationTypes[typeIndex],
-      ...updateData,
-      updatedAt: new Date().toISOString(),
-    };
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    for (const [key, value] of Object.entries(updatePayload)) {
+      sets.push(`"${key}" = $${idx++}`);
+      vals.push(value);
+    }
+    sets.push(`"updatedAt" = CURRENT_TIMESTAMP`);
+    vals.push(id);
+    const updRes = await query(`UPDATE verification_types SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, vals);
+    const updatedVerificationType = updRes.rows[0];
 
-    verificationTypes[typeIndex] = updatedType;
-
-    logger.info(`Updated verification type: ${id}`, { 
+    logger.info(`Updated verification type: ${id}`, {
       userId: req.user?.id,
-      changes: Object.keys(updateData)
+      verificationTypeId: id,
+      updates: Object.keys(updatePayload)
     });
 
     res.json({
       success: true,
-      data: updatedType,
+      data: updatedVerificationType,
       message: 'Verification type updated successfully',
     });
   } catch (error) {
@@ -320,8 +209,11 @@ export const deleteVerificationType = async (req: AuthenticatedRequest, res: Res
   try {
     const { id } = req.params;
 
-    const typeIndex = verificationTypes.findIndex(vt => vt.id === id);
-    if (typeIndex === -1) {
+    // Check if verification type exists
+    const exRes3 = await query(`SELECT * FROM verification_types WHERE id = $1`, [id]);
+    const existingVerificationType = exRes3.rows[0];
+
+    if (!existingVerificationType) {
       return res.status(404).json({
         success: false,
         message: 'Verification type not found',
@@ -329,12 +221,13 @@ export const deleteVerificationType = async (req: AuthenticatedRequest, res: Res
       });
     }
 
-    const deletedType = verificationTypes[typeIndex];
-    verificationTypes.splice(typeIndex, 1);
+    // Delete verification type
+    await query(`DELETE FROM verification_types WHERE id = $1`, [id]);
 
-    logger.info(`Deleted verification type: ${id}`, { 
+    logger.info(`Deleted verification type: ${id}`, {
       userId: req.user?.id,
-      typeName: deletedType.name
+      verificationTypeId: id,
+      verificationTypeName: existingVerificationType.name
     });
 
     res.json({
@@ -346,220 +239,6 @@ export const deleteVerificationType = async (req: AuthenticatedRequest, res: Res
     res.status(500).json({
       success: false,
       message: 'Failed to delete verification type',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/products/:id/verification-types - Get verification types by product
-export const getVerificationTypesByProduct = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id: productId } = req.params;
-
-    // In a real implementation, this would query the database for product-verification type mappings
-    // For now, we'll return all verification types as a mock
-    const productVerificationTypes = verificationTypes.filter(vt => vt.isActive);
-
-    logger.info(`Retrieved ${productVerificationTypes.length} verification types for product ${productId}`, {
-      userId: req.user?.id,
-      productId
-    });
-
-    res.json({
-      success: true,
-      data: productVerificationTypes,
-    });
-  } catch (error) {
-    logger.error('Error getting verification types by product:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get verification types by product',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/verification-types/categories - Get verification type categories
-export const getVerificationTypeCategories = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const categories = [
-      {
-        code: 'ADDRESS_VERIFICATION',
-        name: 'Address Verification',
-        description: 'Verification of residential and office addresses',
-      },
-      {
-        code: 'EMPLOYMENT_VERIFICATION',
-        name: 'Employment Verification',
-        description: 'Verification of employment status and details',
-      },
-      {
-        code: 'BUSINESS_VERIFICATION',
-        name: 'Business Verification',
-        description: 'Verification of business operations and financial status',
-      },
-      {
-        code: 'IDENTITY_VERIFICATION',
-        name: 'Identity Verification',
-        description: 'Verification of personal identity and documents',
-      },
-      {
-        code: 'FINANCIAL_VERIFICATION',
-        name: 'Financial Verification',
-        description: 'Verification of financial status and income',
-      },
-      {
-        code: 'OTHER',
-        name: 'Other',
-        description: 'Other types of verification services',
-      },
-    ];
-
-    res.json({
-      success: true,
-      data: categories,
-    });
-  } catch (error) {
-    logger.error('Error getting verification type categories:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get verification type categories',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/verification-types/stats - Get verification type statistics
-export const getVerificationTypeStats = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const totalTypes = verificationTypes.length;
-    const activeTypes = verificationTypes.filter(vt => vt.isActive).length;
-    const inactiveTypes = totalTypes - activeTypes;
-
-    const categoryStats = verificationTypes.reduce((acc, vt) => {
-      acc[vt.category] = (acc[vt.category] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const averagePrice = verificationTypes.length > 0
-      ? verificationTypes.reduce((sum, vt) => sum + (vt.basePrice || 0), 0) / verificationTypes.length
-      : 0;
-
-    const averageTime = verificationTypes.length > 0
-      ? verificationTypes.reduce((sum, vt) => sum + (vt.estimatedTime || 0), 0) / verificationTypes.length
-      : 0;
-
-    const stats = {
-      totalTypes,
-      activeTypes,
-      inactiveTypes,
-      categoryDistribution: categoryStats,
-      averagePrice: Math.round(averagePrice * 100) / 100,
-      averageEstimatedTime: Math.round(averageTime * 100) / 100,
-      priceRange: {
-        min: verificationTypes.length > 0 ? Math.min(...verificationTypes.map(vt => vt.basePrice || 0)) : 0,
-        max: verificationTypes.length > 0 ? Math.max(...verificationTypes.map(vt => vt.basePrice || 0)) : 0,
-      },
-      timeRange: {
-        min: verificationTypes.length > 0 ? Math.min(...verificationTypes.map(vt => vt.estimatedTime || 0)) : 0,
-        max: verificationTypes.length > 0 ? Math.max(...verificationTypes.map(vt => vt.estimatedTime || 0)) : 0,
-      },
-    };
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    logger.error('Error getting verification type stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get verification type statistics',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// POST /api/verification-types/bulk-import - Bulk import verification types
-export const bulkImportVerificationTypes = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { verificationTypes: importTypes } = req.body;
-
-    if (!importTypes || !Array.isArray(importTypes) || importTypes.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Verification types array is required',
-        error: { code: 'MISSING_TYPES' },
-      });
-    }
-
-    const importedTypes = [];
-    const errors = [];
-
-    for (let i = 0; i < importTypes.length; i++) {
-      try {
-        const typeData = importTypes[i];
-        const { name, code, description, category } = typeData;
-
-        // Validate required fields
-        if (!name || !code) {
-          errors.push(`Row ${i + 1}: Name and code are required`);
-          continue;
-        }
-
-        // Check for duplicate code
-        const existingType = verificationTypes.find(vt => vt.code === code);
-        if (existingType) {
-          errors.push(`Row ${i + 1}: Verification type code '${code}' already exists`);
-          continue;
-        }
-
-        const newType = {
-          id: `vtype_${Date.now()}_${i}`,
-          name,
-          code,
-          description: description || '',
-          category: category || 'OTHER',
-          requirements: typeData.requirements || [],
-          documents: typeData.documents || [],
-          estimatedTime: typeData.estimatedTime || 24,
-          basePrice: typeData.basePrice || 0,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        verificationTypes.push(newType);
-        importedTypes.push(newType);
-      } catch (error) {
-        errors.push(`Row ${i + 1}: ${error}`);
-      }
-    }
-
-    logger.info(`Bulk imported ${importedTypes.length} verification types`, {
-      userId: req.user?.id,
-      successCount: importedTypes.length,
-      errorCount: errors.length
-    });
-
-    res.status(201).json({
-      success: true,
-      data: {
-        imported: importedTypes,
-        errors,
-        summary: {
-          total: importTypes.length,
-          successful: importedTypes.length,
-          failed: errors.length,
-        }
-      },
-      message: `Bulk import completed: ${importedTypes.length} successful, ${errors.length} failed`,
-    });
-  } catch (error) {
-    logger.error('Error in bulk import:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk import verification types',
       error: { code: 'INTERNAL_ERROR' },
     });
   }

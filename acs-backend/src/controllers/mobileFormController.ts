@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { MobileFormSubmissionRequest } from '../types/mobile';
 import { createAuditLog } from '../utils/auditLogger';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
+import { query } from '@/config/database';
 
 export class MobileFormController {
   // Submit residence verification form
@@ -21,7 +19,11 @@ export class MobileFormController {
         where.assignedToId = userId;
       }
 
-      const existingCase = await prisma.case.findFirst({ where });
+      const vals: any[] = [caseId];
+      let caseSql = `SELECT id FROM cases WHERE id = $1`;
+      if (userRole === 'FIELD') { caseSql += ` AND "assignedToId" = $2`; vals.push(userId); }
+      const caseRes = await query(caseSql, vals);
+      const existingCase = caseRes.rows[0];
 
       if (!existingCase) {
         return res.status(404).json({
@@ -72,12 +74,8 @@ export class MobileFormController {
       }
 
       // Verify attachments exist and belong to this case
-      const attachments = await prisma.attachment.findMany({
-        where: {
-          id: { in: attachmentIds },
-          caseId,
-        },
-      });
+      const attRes = await query(`SELECT id FROM attachments WHERE id = ANY($1::text[]) AND "caseId" = $2`, [attachmentIds, caseId]);
+      const attachments = attRes.rows;
 
       if (attachments.length !== attachmentIds.length) {
         return res.status(400).json({
@@ -111,59 +109,48 @@ export class MobileFormController {
       };
 
       // Update case with verification data
-      const updatedCase = await prisma.case.update({
-        where: { id: caseId },
-        data: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
-          verificationData: JSON.stringify(verificationData),
-          verificationType: 'RESIDENCE',
-          verificationOutcome: formData.outcome || 'VERIFIED',
-          updatedAt: new Date(),
-        },
-      });
+      await query(`UPDATE cases SET status = 'COMPLETED', "completedAt" = CURRENT_TIMESTAMP, "verificationData" = $1, "verificationType" = 'RESIDENCE', "verificationOutcome" = $2, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $3`, [JSON.stringify(verificationData), formData.outcome || 'VERIFIED', caseId]);
+      const caseUpd = await query(`SELECT id, status, "completedAt" FROM cases WHERE id = $1`, [caseId]);
+      const updatedCase = caseUpd.rows[0];
 
       // Update attachment geo-locations
       for (const photo of photos) {
-        await prisma.attachment.update({
-          where: { id: photo.attachmentId },
-          data: {
-            geoLocation: JSON.stringify(photo.geoLocation),
-          },
-        });
+        await query(`UPDATE attachments SET "geoLocation" = $1 WHERE id = $2`, [JSON.stringify(photo.geoLocation), photo.attachmentId]);
       }
 
       // Create residence verification report
-      await prisma.residenceVerificationReport.create({
-        data: {
+      await query(
+        `INSERT INTO residence_verification_reports (
+          id, "caseId", "applicantName", "applicantPhone", "applicantEmail", residenceType, ownershipStatus, monthlyRent, landlordName, landlordPhone,
+          residenceSince, familyMembers, neighborVerification, neighborName, neighborPhone, propertyCondition, accessibilityNotes, verificationNotes, recommendationStatus, verifiedAt
+        ) VALUES (
+          gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP
+        )`,
+        [
           caseId,
-          applicantName: formData.applicantName || '',
-          applicantPhone: formData.applicantPhone,
-          applicantEmail: formData.applicantEmail,
-          residenceType: formData.residenceType || 'HOUSE',
-          ownershipStatus: formData.ownershipStatus || 'OWNED',
-          monthlyRent: formData.monthlyRent ? parseFloat(formData.monthlyRent) : null,
-          landlordName: formData.landlordName,
-          landlordPhone: formData.landlordPhone,
-          residenceSince: formData.residenceSince ? new Date(formData.residenceSince) : null,
-          familyMembers: formData.familyMembers ? parseInt(formData.familyMembers) : null,
-          neighborVerification: formData.neighborVerification === 'true',
-          neighborName: formData.neighborName,
-          neighborPhone: formData.neighborPhone,
-          propertyCondition: formData.propertyCondition,
-          accessibilityNotes: formData.accessibilityNotes,
-          verificationNotes: formData.verificationNotes,
-          recommendationStatus: formData.recommendationStatus || 'POSITIVE',
-        },
-      });
+          formData.applicantName || '',
+          formData.applicantPhone,
+          formData.applicantEmail,
+          formData.residenceType || 'HOUSE',
+          formData.ownershipStatus || 'OWNED',
+          formData.monthlyRent ? parseFloat(formData.monthlyRent) : null,
+          formData.landlordName,
+          formData.landlordPhone,
+          formData.residenceSince ? new Date(formData.residenceSince) : null,
+          formData.familyMembers ? parseInt(formData.familyMembers) : null,
+          formData.neighborVerification === 'true',
+          formData.neighborName,
+          formData.neighborPhone,
+          formData.propertyCondition,
+          formData.accessibilityNotes,
+          formData.verificationNotes,
+          formData.recommendationStatus || 'POSITIVE',
+        ]
+      );
 
       // Remove auto-save data
-      await prisma.autoSave.deleteMany({
-        where: {
-          caseId,
-          formType: 'RESIDENCE',
-        },
-      });
+      await query(`DELETE FROM auto_saves WHERE "caseId" = $1 AND "formType" = 'RESIDENCE'`, [caseId]);
 
       await createAuditLog({
         action: 'RESIDENCE_VERIFICATION_SUBMITTED',
@@ -218,7 +205,11 @@ export class MobileFormController {
         where.assignedToId = userId;
       }
 
-      const existingCase = await prisma.case.findFirst({ where });
+      const vals2: any[] = [caseId];
+      let caseSql2 = `SELECT id FROM cases WHERE id = $1`;
+      if (userRole === 'FIELD') { caseSql2 += ` AND "assignedToId" = $2`; vals2.push(userId); }
+      const caseRes2 = await query(caseSql2, vals2);
+      const existingCase = caseRes2.rows[0];
 
       if (!existingCase) {
         return res.status(404).json({
@@ -269,12 +260,8 @@ export class MobileFormController {
       }
 
       // Verify attachments exist and belong to this case
-      const attachments = await prisma.attachment.findMany({
-        where: {
-          id: { in: attachmentIds },
-          caseId,
-        },
-      });
+      const attRes2 = await query(`SELECT id FROM attachments WHERE id = ANY($1::text[]) AND "caseId" = $2`, [attachmentIds, caseId]);
+      const attachments = attRes2.rows;
 
       if (attachments.length !== attachmentIds.length) {
         return res.status(400).json({
@@ -308,59 +295,48 @@ export class MobileFormController {
       };
 
       // Update case with verification data
-      const updatedCase = await prisma.case.update({
-        where: { id: caseId },
-        data: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
-          verificationData: JSON.stringify(verificationData),
-          verificationType: 'OFFICE',
-          verificationOutcome: formData.outcome || 'VERIFIED',
-          updatedAt: new Date(),
-        },
-      });
+      await query(`UPDATE cases SET status = 'COMPLETED', "completedAt" = CURRENT_TIMESTAMP, "verificationData" = $1, "verificationType" = 'OFFICE', "verificationOutcome" = $2, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $3`, [JSON.stringify(verificationData), formData.outcome || 'VERIFIED', caseId]);
+      const caseUpd2 = await query(`SELECT id, status, "completedAt" FROM cases WHERE id = $1`, [caseId]);
+      const updatedCase = caseUpd2.rows[0];
 
       // Update attachment geo-locations
       for (const photo of photos) {
-        await prisma.attachment.update({
-          where: { id: photo.attachmentId },
-          data: {
-            geoLocation: JSON.stringify(photo.geoLocation),
-          },
-        });
+        await query(`UPDATE attachments SET "geoLocation" = $1 WHERE id = $2`, [JSON.stringify(photo.geoLocation), photo.attachmentId]);
       }
 
       // Create office verification report
-      await prisma.officeVerificationReport.create({
-        data: {
+      await query(
+        `INSERT INTO office_verification_reports (
+          id, "caseId", "companyName", designation, department, "employeeId", "joiningDate", "monthlySalary", "workingHours", "hrContactName",
+          "hrContactPhone", "officeAddress", "officeType", "totalEmployees", "businessNature", "verificationMethod", "documentsSeen", "verificationNotes", "recommendationStatus", "verifiedAt"
+        ) VALUES (
+          gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP
+        )`,
+        [
           caseId,
-          companyName: formData.companyName || '',
-          designation: formData.designation || '',
-          department: formData.department,
-          employeeId: formData.employeeId,
-          joiningDate: formData.joiningDate ? new Date(formData.joiningDate) : null,
-          monthlySalary: formData.monthlySalary ? parseFloat(formData.monthlySalary) : null,
-          workingHours: formData.workingHours,
-          hrContactName: formData.hrContactName,
-          hrContactPhone: formData.hrContactPhone,
-          officeAddress: formData.officeAddress || '',
-          officeType: formData.officeType || 'CORPORATE',
-          totalEmployees: formData.totalEmployees ? parseInt(formData.totalEmployees) : null,
-          businessNature: formData.businessNature,
-          verificationMethod: formData.verificationMethod || 'PHYSICAL',
-          documentsSeen: formData.documentsSeen,
-          verificationNotes: formData.verificationNotes,
-          recommendationStatus: formData.recommendationStatus || 'POSITIVE',
-        },
-      });
+          formData.companyName || '',
+          formData.designation || '',
+          formData.department,
+          formData.employeeId,
+          formData.joiningDate ? new Date(formData.joiningDate) : null,
+          formData.monthlySalary ? parseFloat(formData.monthlySalary) : null,
+          formData.workingHours,
+          formData.hrContactName,
+          formData.hrContactPhone,
+          formData.officeAddress || '',
+          formData.officeType || 'CORPORATE',
+          formData.totalEmployees ? parseInt(formData.totalEmployees) : null,
+          formData.businessNature,
+          formData.verificationMethod || 'PHYSICAL',
+          formData.documentsSeen,
+          formData.verificationNotes,
+          formData.recommendationStatus || 'POSITIVE',
+        ]
+      );
 
       // Remove auto-save data
-      await prisma.autoSave.deleteMany({
-        where: {
-          caseId,
-          formType: 'OFFICE',
-        },
-      });
+      await query(`DELETE FROM auto_saves WHERE "caseId" = $1 AND "formType" = 'OFFICE'`, [caseId]);
 
       await createAuditLog({
         action: 'OFFICE_VERIFICATION_SUBMITTED',

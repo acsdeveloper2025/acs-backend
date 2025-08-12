@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
@@ -8,8 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MobileFileUploadRequest, MobileAttachmentResponse } from '../types/mobile';
 import { createAuditLog } from '../utils/auditLogger';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
+import { query } from '@/config/database';
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -72,12 +70,14 @@ export class MobileAttachmentController {
       }
 
       // Verify case access
-      const where: any = { id: caseId };
+      const where: any[] = [caseId];
+      let caseSql = `SELECT id FROM cases WHERE id = $1`;
       if (userRole === 'FIELD') {
-        where.assignedToId = userId;
+        caseSql += ` AND "assignedToId" = $2`;
+        where.push(userId);
       }
-
-      const existingCase = await prisma.case.findFirst({ where });
+      const caseRes = await query(caseSql, where);
+      const existingCase = caseRes.rows[0];
 
       if (!existingCase) {
         // Clean up uploaded files
@@ -94,9 +94,8 @@ export class MobileAttachmentController {
       }
 
       // Check file count limit
-      const existingAttachmentCount = await prisma.attachment.count({
-        where: { caseId },
-      });
+      const countRes = await query(`SELECT COUNT(*)::int as count FROM attachments WHERE "caseId" = $1`, [caseId]);
+      const existingAttachmentCount = Number(countRes.rows[0]?.count || 0);
 
       if (existingAttachmentCount + files.length > config.mobile.maxFilesPerCase) {
         // Clean up uploaded files
@@ -141,21 +140,25 @@ export class MobileAttachmentController {
           }
 
           // Save attachment to database
-          const attachment = await prisma.attachment.create({
-            data: {
-              name: file.originalname, // Required field
-              filename: file.filename,
-              originalName: file.originalname,
-              type: file.mimetype.startsWith('image/') ? 'IMAGE' : 'PDF',
-              mimeType: file.mimetype,
-              size: file.size,
-              url: `/uploads/mobile/${file.filename}`,
+          const attRes = await query(
+            `INSERT INTO attachments (id, "caseId", name, filename, "originalName", type, "mimeType", size, url, "thumbnailUrl", "uploadedAt", "uploadedById", description, "geoLocation")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10, NULL, $11)
+             RETURNING id, filename, "originalName", "mimeType", size, url, "thumbnailUrl", "uploadedAt"`,
+            [
+              caseId,
+              file.originalname,
+              file.filename,
+              file.originalname,
+              file.mimetype.startsWith('image/') ? 'IMAGE' : 'PDF',
+              file.mimetype,
+              file.size,
+              `/uploads/mobile/${file.filename}`,
               thumbnailUrl,
-              caseId: caseId,
-              uploadedById: userId,
-              geoLocation: geoLocation ? JSON.stringify(geoLocation) : null,
-            },
-          });
+              userId,
+              geoLocation ? JSON.stringify(geoLocation) : null,
+            ]
+          );
+          const attachment = attRes.rows[0];
 
           uploadedAttachments.push({
             id: attachment.id,
@@ -165,7 +168,7 @@ export class MobileAttachmentController {
             size: attachment.size,
             url: attachment.url,
             thumbnailUrl: attachment.thumbnailUrl,
-            uploadedAt: attachment.uploadedAt.toISOString(),
+            uploadedAt: new Date(attachment.uploadedAt).toISOString(),
             geoLocation,
           });
 
@@ -229,7 +232,11 @@ export class MobileAttachmentController {
         where.assignedToId = userId;
       }
 
-      const existingCase = await prisma.case.findFirst({ where });
+      const caseVals: any[] = [caseId];
+      let caseSql = `SELECT id FROM cases WHERE id = $1`;
+      if (userRole === 'FIELD') { caseSql += ` AND "assignedToId" = $2`; caseVals.push(userId); }
+      const caseCheck = await query(caseSql, caseVals);
+      const existingCase = caseCheck.rows[0];
 
       if (!existingCase) {
         return res.status(404).json({
@@ -242,12 +249,9 @@ export class MobileAttachmentController {
         });
       }
 
-      const attachments = await prisma.attachment.findMany({
-        where: { caseId },
-        orderBy: { uploadedAt: 'desc' },
-      });
+      const attRes = await query(`SELECT id, filename, "originalName", "mimeType", size, url, "thumbnailUrl", "uploadedAt", "geoLocation" FROM attachments WHERE "caseId" = $1 ORDER BY "uploadedAt" DESC`, [caseId]);
 
-      const mobileAttachments: MobileAttachmentResponse[] = attachments.map(att => ({
+      const mobileAttachments: MobileAttachmentResponse[] = attRes.rows.map((att: any) => ({
         id: att.id,
         filename: att.filename,
         originalName: att.originalName,
@@ -255,7 +259,7 @@ export class MobileAttachmentController {
         size: att.size,
         url: att.url,
         thumbnailUrl: att.thumbnailUrl,
-        uploadedAt: att.uploadedAt.toISOString(),
+        uploadedAt: new Date(att.uploadedAt).toISOString(),
         geoLocation: att.geoLocation ? JSON.parse(att.geoLocation as string) : undefined,
       }));
 
@@ -284,17 +288,12 @@ export class MobileAttachmentController {
       const userId = (req as any).user?.userId;
       const userRole = (req as any).user?.role;
 
-      const attachment = await prisma.attachment.findUnique({
-        where: { id: attachmentId },
-        include: {
-          case: {
-            select: {
-              id: true,
-              assignedToId: true,
-            },
-          },
-        },
-      });
+      const attRes = await query(
+        `SELECT a.id, a.filename, a."originalName", a."mimeType", a.size, a.url, a."thumbnailUrl", a."uploadedAt", a."caseId", c."assignedToId"
+         FROM attachments a JOIN cases c ON c.id = a."caseId" WHERE a.id = $1`,
+        [attachmentId]
+      );
+      const attachment: any = attRes.rows[0];
 
       if (!attachment) {
         return res.status(404).json({
@@ -375,18 +374,12 @@ export class MobileAttachmentController {
       const userId = (req as any).user?.userId;
       const userRole = (req as any).user?.role;
 
-      const attachment = await prisma.attachment.findUnique({
-        where: { id: attachmentId },
-        include: {
-          case: {
-            select: {
-              id: true,
-              assignedToId: true,
-              status: true,
-            },
-          },
-        },
-      });
+      const attRes = await query(
+        `SELECT a.id, a.filename, a."originalName", a."mimeType", a.size, a.url, a."thumbnailUrl", a."uploadedAt", a."caseId", c."assignedToId", c.status
+         FROM attachments a JOIN cases c ON c.id = a."caseId" WHERE a.id = $1`,
+        [attachmentId]
+      );
+      const attachment: any = attRes.rows[0];
 
       if (!attachment) {
         return res.status(404).json({
@@ -424,9 +417,7 @@ export class MobileAttachmentController {
       }
 
       // Delete from database
-      await prisma.attachment.delete({
-        where: { id: attachmentId },
-      });
+      await query(`DELETE FROM attachments WHERE id = $1`, [attachmentId]);
 
       // Delete files from disk
       const filePath = path.join(process.cwd(), 'uploads', 'mobile', attachment.filename);

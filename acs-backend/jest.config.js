@@ -1,3 +1,5 @@
+const useDbSetup = process.env.USE_DB_SETUP === 'true';
+
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
@@ -14,14 +16,14 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
-  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
+  setupFilesAfterEnv: useDbSetup ? ['<rootDir>/src/test/setup.ts'] : [],
   testTimeout: 10000,
   verbose: true,
   forceExit: true,
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
 };

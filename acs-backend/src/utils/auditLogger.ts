@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { query } from '@/config/database';
 
 export interface AuditLogData {
   action: string;
@@ -14,18 +12,19 @@ export interface AuditLogData {
 
 export const createAuditLog = async (data: AuditLogData): Promise<void> => {
   try {
-    await prisma.auditLog.create({
-      data: {
-        action: data.action,
-        entityType: data.entityType,
-        entityId: data.entityId,
-        userId: data.userId || '',
-        details: data.details ? JSON.stringify(data.details) : null,
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
-        // createdAt is automatically set by Prisma
-      },
-    });
+    await query(
+      `INSERT INTO audit_logs (id, action, "entityType", "entityId", "userId", details, "ipAddress", "userAgent", "createdAt")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+      [
+        data.action,
+        data.entityType,
+        data.entityId,
+        data.userId || null,
+        data.details ? JSON.stringify(data.details) : null,
+        data.ipAddress || null,
+        data.userAgent || null,
+      ]
+    );
   } catch (error) {
     console.error('Failed to create audit log:', error);
     // Don't throw error to avoid breaking the main operation

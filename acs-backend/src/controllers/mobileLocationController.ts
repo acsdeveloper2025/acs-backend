@@ -1,15 +1,13 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
-import { 
-  MobileLocationCaptureRequest, 
+import { query } from '@/config/database';
+import {
+  MobileLocationCaptureRequest,
   MobileLocationValidationRequest,
-  MobileLocationValidationResponse 
+  MobileLocationValidationResponse
 } from '../types/mobile';
 import { createAuditLog } from '../utils/auditLogger';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
 
 export class MobileLocationController {
   // Capture GPS location
@@ -62,7 +60,11 @@ export class MobileLocationController {
           where.assignedToId = userId;
         }
 
-        const existingCase = await prisma.case.findFirst({ where });
+        const caseSqlVals: any[] = [where.id];
+        let caseSql = `SELECT id FROM cases WHERE id = $1`;
+        if (where.assignedToId) { caseSql += ` AND "assignedToId" = $2`; caseSqlVals.push(where.assignedToId); }
+        const caseRes = await query(caseSql, caseSqlVals);
+        const existingCase = caseRes.rows[0];
 
         if (!existingCase) {
           return res.status(404).json({
@@ -77,16 +79,13 @@ export class MobileLocationController {
       }
 
       // Save location data
-      const locationRecord = await prisma.location.create({
-        data: {
-          caseId,
-          latitude,
-          longitude,
-          accuracy,
-          timestamp: new Date(timestamp),
-          source,
-        },
-      });
+      const locRes = await query(
+        `INSERT INTO locations (id, "caseId", latitude, longitude, accuracy, timestamp, source)
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
+         RETURNING id, timestamp`,
+        [caseId || null, latitude, longitude, accuracy, new Date(timestamp), source]
+      );
+      const locationRecord = locRes.rows[0];
 
       await createAuditLog({
         action: 'MOBILE_LOCATION_CAPTURED',
@@ -285,7 +284,11 @@ export class MobileLocationController {
         where.assignedToId = userId;
       }
 
-      const existingCase = await prisma.case.findFirst({ where });
+      const vals8: any[] = [caseId];
+      let exSql6 = `SELECT id FROM cases WHERE id = $1`;
+      if (userRole === 'FIELD') { exSql6 += ` AND "assignedToId" = $2`; vals8.push(userId); }
+      const exRes6 = await query(exSql6, vals8);
+      const existingCase = exRes6.rows[0];
 
       if (!existingCase) {
         return res.status(404).json({
@@ -298,28 +301,21 @@ export class MobileLocationController {
         });
       }
 
-      const locationHistory = await prisma.location.findMany({
-        where: { caseId },
-        orderBy: { timestamp: 'desc' },
-        include: {
-          case: {
-            select: {
-              id: true,
-              title: true,
-              customerName: true,
-            },
-          },
-        },
-      });
+      const locRes = await query(
+        `SELECT l.id, l.latitude, l.longitude, l.accuracy, l.timestamp, l.source, c.id as case_id, c.title, c."customerName"
+         FROM locations l JOIN cases c ON c.id = l."caseId"
+         WHERE l."caseId" = $1 ORDER BY l.timestamp DESC`,
+        [caseId]
+      );
 
-      const formattedHistory = locationHistory.map(location => ({
+      const formattedHistory = locRes.rows.map((location: any) => ({
         id: location.id,
         latitude: location.latitude,
         longitude: location.longitude,
         accuracy: location.accuracy,
-        timestamp: location.timestamp.toISOString(),
+        timestamp: new Date(location.timestamp).toISOString(),
         source: location.source,
-        case: location.case,
+        case: { id: location.case_id, title: location.title, customerName: location.customerName },
       }));
 
       res.json({
@@ -388,20 +384,17 @@ export class MobileLocationController {
         }
       }
 
-      const locationTrail = await prisma.location.findMany({
-        where,
-        orderBy: { timestamp: 'desc' },
-        take: parseInt(limit as string),
-        include: {
-          case: {
-            select: {
-              id: true,
-              title: true,
-              customerName: true,
-            },
-          },
-        },
-      });
+      const vals: any[] = [];
+      let sql = `SELECT l.id, l.latitude, l.longitude, l.accuracy, l.timestamp, l.source, c.id as case_id, c.title, c."customerName" FROM locations l JOIN cases c ON c.id = l."caseId"`;
+      const wh: string[] = [];
+      if (where.caseId) { vals.push(where.caseId); wh.push(`l."caseId" = $${vals.length}`); }
+      if (where.timestamp?.gte) { vals.push(where.timestamp.gte); wh.push(`l.timestamp >= $${vals.length}`); }
+      if (where.timestamp?.lte) { vals.push(where.timestamp.lte); wh.push(`l.timestamp <= $${vals.length}`); }
+      if (wh.length) sql += ` WHERE ${wh.join(' AND ')}`;
+      sql += ` ORDER BY l.timestamp DESC LIMIT $${vals.length + 1}`;
+      vals.push(parseInt(limit as string));
+      const locationTrailRes = await query(sql, vals);
+      const locationTrail = locationTrailRes.rows;
 
       const formattedTrail = locationTrail.map(location => ({
         id: location.id,

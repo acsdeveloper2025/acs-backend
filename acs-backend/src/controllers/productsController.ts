@@ -1,7 +1,8 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
-import { prisma } from '@/config/database';
+import { pool, query, withTransaction } from '@/config/database';
+import { randomUUID } from 'crypto';
 
 // GET /api/products - List products with pagination and filters
 export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
@@ -9,60 +10,40 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
     const { 
       page = 1, 
       limit = 20, 
-      clientId, 
-      category, 
-      isActive, 
       search, 
       sortBy = 'name', 
       sortOrder = 'asc' 
     } = req.query;
 
-    // Build where clause
-    const whereClause: any = {};
-    
-    if (clientId) {
-      whereClause.clientId = clientId;
+    // Build where clause (basic search on name/code)
+    const values: any[] = [];
+    const whereSql: string[] = [];
+    if (search) {
+      values.push(`%${String(search)}%`);
+      values.push(`%${String(search)}%`);
+      whereSql.push('(name ILIKE $1 OR code ILIKE $2)');
     }
-    if (category) {
-      whereClause.category = category;
-    }
-    if (isActive !== undefined) {
-      whereClause.isActive = isActive === 'true';
-    }
-    // Temporarily disable search to test basic functionality
-    // if (search) {
-    //   const searchTerm = search as string;
-    //   whereClause.OR = [
-    //     { name: { contains: searchTerm } },
-    //     { code: { contains: searchTerm } },
-    //     { description: { contains: searchTerm } }
-    //   ];
-    // }
+    const whereClause = whereSql.length ? `WHERE ${whereSql.join(' AND ')}` : '';
 
     // Get total count
-    const totalCount = await prisma.product.count({ where: whereClause });
+    const countRes = await query<{ count: string }>(`SELECT COUNT(*)::text as count FROM products ${whereClause}`, values);
+    const totalCount = Number(countRes.rows[0]?.count || 0);
 
     // Get products with pagination
-    const dbProducts = await prisma.product.findMany({
-      where: whereClause,
-      skip: (Number(page) - 1) * Number(limit),
-      take: Number(limit),
-      orderBy: { [sortBy as string]: sortOrder },
-      include: {
-        client: {
-          select: { id: true, name: true }
-        }
-      }
-    });
+    const offset = (Number(page) - 1) * Number(limit);
+    const sortCol = ['name', 'code', 'createdAt', 'updatedAt'].includes(String(sortBy)) ? String(sortBy) : 'name';
+    const sortDir = String(sortOrder).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+    const listRes = await query(
+      `SELECT id, name, code, createdAt, updatedAt
+       FROM products
+       ${whereClause}
+       ORDER BY ${sortCol} ${sortDir}
+       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, Number(limit), offset]
+    );
+    const products = listRes.rows;
 
-    // Transform data to match expected format
-    const transformedProducts = dbProducts.map(product => ({
-      ...product,
-      pricing: product.pricing ? JSON.parse(product.pricing) : null,
-      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
-    }));
-
-    logger.info(`Retrieved ${dbProducts.length} products from database`, {
+    logger.info(`Retrieved ${products.length} products from database`, {
       userId: req.user?.id,
       page: Number(page),
       limit: Number(limit),
@@ -72,7 +53,7 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       success: true,
-      data: transformedProducts,
+      data: products,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -94,15 +75,8 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
 export const getProductById = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    
-    const product = await prisma.product.findUnique({
-      where: { id },
-      include: {
-        client: {
-          select: { id: true, name: true }
-        }
-      }
-    });
+    const productRes = await query(`SELECT id, name, code, createdAt, updatedAt FROM products WHERE id = $1`, [id]);
+    const product = productRes.rows[0];
 
     if (!product) {
       return res.status(404).json({
@@ -112,18 +86,11 @@ export const getProductById = async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    // Transform response data
-    const responseData = {
-      ...product,
-      pricing: product.pricing ? JSON.parse(product.pricing) : null,
-      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
-    };
-
     logger.info(`Retrieved product ${id}`, { userId: req.user?.id });
 
     res.json({
       success: true,
-      data: responseData,
+      data: product,
     });
   } catch (error) {
     logger.error('Error retrieving product:', error);
@@ -140,21 +107,12 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { 
       name, 
-      code, 
-      description, 
-      category, 
-      clientId, 
-      pricing, 
-      verificationType, 
-      isActive = true 
+      code
     } = req.body;
 
     // Check if product code already exists
-    const existingProduct = await prisma.product.findUnique({
-      where: { code }
-    });
-    
-    if (existingProduct) {
+    const dupRes = await query(`SELECT 1 FROM products WHERE code = $1`, [code]);
+    if (dupRes.rowCount && dupRes.rowCount > 0) {
       return res.status(400).json({
         success: false,
         message: 'Product code already exists',
@@ -162,55 +120,24 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
       });
     }
 
-    // Verify client exists
-    const client = await prisma.client.findUnique({
-      where: { id: clientId }
-    });
-    
-    if (!client) {
-      return res.status(400).json({
-        success: false,
-        message: 'Client not found',
-        error: { code: 'CLIENT_NOT_FOUND' },
-      });
-    }
-
     // Create product in database
-    const newProduct = await prisma.product.create({
-      data: {
-        name,
-        code,
-        description,
-        category,
-        clientId,
-        pricing: pricing ? JSON.stringify(pricing) : null,
-        verificationType: verificationType ? JSON.stringify(verificationType) : null,
-        isActive,
-      },
-      include: {
-        client: {
-          select: { id: true, name: true }
-        }
-      }
-    });
-
-    // Transform response data
-    const responseData = {
-      ...newProduct,
-      pricing: newProduct.pricing ? JSON.parse(newProduct.pricing) : null,
-      verificationType: newProduct.verificationType ? JSON.parse(newProduct.verificationType) : []
-    };
+    const insertRes = await query(
+      `INSERT INTO products (id, name, code, createdAt)
+       VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP)
+       RETURNING id, name, code, createdAt, updatedAt`,
+      [name, code]
+    );
+    const newProduct = insertRes.rows[0];
 
     logger.info(`Created new product: ${newProduct.id}`, { 
       userId: req.user?.id,
       productName: name,
-      productCode: code,
-      clientId
+      productCode: code
     });
 
     res.status(201).json({
       success: true,
-      data: responseData,
+      data: newProduct,
       message: 'Product created successfully',
     });
   } catch (error) {
@@ -227,12 +154,11 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
 export const updateProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = req.body as { name?: string; code?: string };
 
     // Check if product exists
-    const existingProduct = await prisma.product.findUnique({
-      where: { id }
-    });
+    const existingRes = await query(`SELECT id, name, code FROM products WHERE id = $1`, [id]);
+    const existingProduct = existingRes.rows[0];
 
     if (!existingProduct) {
       return res.status(404).json({
@@ -244,11 +170,8 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
 
     // Check for duplicate code if being updated
     if (updateData.code && updateData.code !== existingProduct.code) {
-      const duplicateProduct = await prisma.product.findUnique({
-        where: { code: updateData.code }
-      });
-
-      if (duplicateProduct) {
+      const dupRes = await query(`SELECT 1 FROM products WHERE code = $1`, [updateData.code]);
+      if (dupRes.rowCount && dupRes.rowCount > 0) {
         return res.status(400).json({
           success: false,
           message: 'Product code already exists',
@@ -259,32 +182,26 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
 
     // Prepare update data
     const updatePayload: any = {};
-
+    
     if (updateData.name) updatePayload.name = updateData.name;
     if (updateData.code) updatePayload.code = updateData.code;
-    if (updateData.description !== undefined) updatePayload.description = updateData.description;
-    if (updateData.category) updatePayload.category = updateData.category;
-    if (updateData.isActive !== undefined) updatePayload.isActive = updateData.isActive;
-    if (updateData.pricing) updatePayload.pricing = JSON.stringify(updateData.pricing);
-    if (updateData.verificationType) updatePayload.verificationType = JSON.stringify(updateData.verificationType);
 
-    // Update product
-    const updatedProduct = await prisma.product.update({
-      where: { id },
-      data: updatePayload,
-      include: {
-        client: {
-          select: { id: true, name: true }
-        }
-      }
-    });
+    // Build dynamic update
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    for (const key of Object.keys(updatePayload)) {
+      sets.push(`${key} = $${idx++}`);
+      vals.push((updatePayload as any)[key]);
+    }
+    sets.push(`updatedAt = CURRENT_TIMESTAMP`);
+    vals.push(id);
 
-    // Transform response data
-    const responseData = {
-      ...updatedProduct,
-      pricing: updatedProduct.pricing ? JSON.parse(updatedProduct.pricing) : null,
-      verificationType: updatedProduct.verificationType ? JSON.parse(updatedProduct.verificationType) : []
-    };
+    const updRes = await query(
+      `UPDATE products SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, name, code, createdAt, updatedAt`,
+      vals
+    );
+    const updatedProduct = updRes.rows[0];
 
     logger.info(`Updated product: ${id}`, {
       userId: req.user?.id,
@@ -294,7 +211,7 @@ export const updateProduct = async (req: AuthenticatedRequest, res: Response) =>
 
     res.json({
       success: true,
-      data: responseData,
+      data: updatedProduct,
       message: 'Product updated successfully',
     });
   } catch (error) {
@@ -313,9 +230,8 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response) =>
     const { id } = req.params;
 
     // Check if product exists
-    const existingProduct = await prisma.product.findUnique({
-      where: { id }
-    });
+    const existRes = await query(`SELECT id, name FROM products WHERE id = $1`, [id]);
+    const existingProduct = existRes.rows[0];
 
     if (!existingProduct) {
       return res.status(404).json({
@@ -326,11 +242,9 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response) =>
     }
 
     // Delete product
-    await prisma.product.delete({
-      where: { id }
-    });
+    await query(`DELETE FROM products WHERE id = $1`, [id]);
 
-    logger.info(`Deleted product: ${id}`, {
+    logger.info(`Deleted product: ${id}`, { 
       userId: req.user?.id,
       productId: id,
       productName: existingProduct.name
@@ -350,236 +264,37 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response) =>
   }
 };
 
-// GET /api/clients/:id/products - Get products by client
+// GET /api/clients/:id/products - Get products mapped to a client
 export const getProductsByClient = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id: clientId } = req.params;
-    const { isActive } = req.query;
+    const { isActive } = req.query as { isActive?: string };
 
-    // Build where clause
-    const whereClause: any = { clientId };
+    // Build where clause for mapping table
+    const values: any[] = [clientId];
+    const activeClause = typeof isActive !== 'undefined' ? 'AND cp."isActive" = $2' : '';
+    if (typeof isActive !== 'undefined') values.push(String(isActive) === 'true');
+    const mapRes = await query(
+      `SELECT p.id, p.name, p.code, p."createdAt", p."updatedAt"
+       FROM client_products cp
+       JOIN products p ON p.id = cp."productId"
+       WHERE cp."clientId" = $1 ${activeClause}
+      `,
+      values
+    );
+    const products = mapRes.rows;
 
-    if (isActive !== undefined) {
-      whereClause.isActive = isActive === 'true';
-    }
-
-    // Get products for the client
-    const products = await prisma.product.findMany({
-      where: whereClause,
-      orderBy: { name: 'asc' },
-      include: {
-        client: {
-          select: { id: true, name: true }
-        }
-      }
-    });
-
-    // Transform data to match expected format
-    const transformedProducts = products.map(product => ({
-      ...product,
-      pricing: product.pricing ? JSON.parse(product.pricing) : null,
-      verificationType: product.verificationType ? JSON.parse(product.verificationType) : []
-    }));
-
-    logger.info(`Retrieved ${products.length} products for client ${clientId}`, {
-      userId: req.user?.id,
-      clientId,
-      total: products.length
-    });
+    logger.info(`Retrieved ${products.length} products for client ${clientId}`, { userId: req.user?.id });
 
     res.json({
       success: true,
-      data: transformedProducts,
+      data: products,
     });
   } catch (error) {
     logger.error('Error retrieving products by client:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve products',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// POST /api/products/:id/verification-types - Map verification types to product
-export const mapVerificationTypes = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { verificationTypes } = req.body;
-
-    // Check if product exists
-    const product = await prisma.product.findUnique({
-      where: { id }
-    });
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found',
-        error: { code: 'NOT_FOUND' },
-      });
-    }
-
-    // Update verification types
-    await prisma.product.update({
-      where: { id },
-      data: {
-        verificationType: JSON.stringify(verificationTypes)
-      }
-    });
-
-    logger.info(`Mapped verification types to product: ${id}`, {
-      userId: req.user?.id,
-      productId: id,
-      verificationTypes
-    });
-
-    res.json({
-      success: true,
-      message: 'Verification types mapped successfully',
-    });
-  } catch (error) {
-    logger.error('Error mapping verification types:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to map verification types',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// POST /api/products/bulk-import - Bulk import products
-export const bulkImportProducts = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { products } = req.body;
-
-    // Validate and create products
-    const createdProducts = [];
-    const errors = [];
-
-    for (const productData of products) {
-      try {
-        // Check if code already exists
-        const existingProduct = await prisma.product.findUnique({
-          where: { code: productData.code }
-        });
-
-        if (existingProduct) {
-          errors.push(`Product code ${productData.code} already exists`);
-          continue;
-        }
-
-        // Create product
-        const newProduct = await prisma.product.create({
-          data: {
-            name: productData.name,
-            code: productData.code,
-            description: productData.description || null,
-            category: productData.category || 'OTHER',
-            clientId: productData.clientId,
-            isActive: productData.isActive !== undefined ? productData.isActive : true,
-            pricing: productData.pricing ? JSON.stringify(productData.pricing) : null,
-            verificationType: productData.verificationType ? JSON.stringify(productData.verificationType) : null,
-          }
-        });
-
-        createdProducts.push(newProduct);
-      } catch (error) {
-        errors.push(`Failed to create product ${productData.code}: ${error.message}`);
-      }
-    }
-
-    logger.info(`Bulk imported ${createdProducts.length} products`, {
-      userId: req.user?.id,
-      created: createdProducts.length,
-      errors: errors.length
-    });
-
-    res.json({
-      success: true,
-      data: {
-        created: createdProducts.length,
-        errors: errors
-      },
-      message: `Successfully imported ${createdProducts.length} products`,
-    });
-  } catch (error) {
-    logger.error('Error bulk importing products:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk import products',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/products/categories - Get product categories
-export const getProductCategories = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const categories = [
-      'LOAN_VERIFICATION',
-      'EMPLOYMENT_VERIFICATION',
-      'BUSINESS_VERIFICATION',
-      'IDENTITY_VERIFICATION',
-      'ADDRESS_VERIFICATION',
-      'OTHER'
-    ];
-
-    res.json({
-      success: true,
-      data: categories,
-    });
-  } catch (error) {
-    logger.error('Error retrieving product categories:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve product categories',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/products/stats - Get product statistics
-export const getProductStats = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const totalProducts = await prisma.product.count();
-    const activeProducts = await prisma.product.count({
-      where: { isActive: true }
-    });
-    const inactiveProducts = totalProducts - activeProducts;
-
-    // Get products by category
-    const productsByCategory = await prisma.product.groupBy({
-      by: ['category'],
-      _count: {
-        id: true
-      }
-    });
-
-    const stats = {
-      total: totalProducts,
-      active: activeProducts,
-      inactive: inactiveProducts,
-      byCategory: productsByCategory.reduce((acc, item) => {
-        acc[item.category] = item._count.id;
-        return acc;
-      }, {} as Record<string, number>)
-    };
-
-    logger.info('Retrieved product statistics', {
-      userId: req.user?.id,
-      stats
-    });
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    logger.error('Error retrieving product stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve product statistics',
       error: { code: 'INTERNAL_ERROR' },
     });
   }

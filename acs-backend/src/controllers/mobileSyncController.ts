@@ -1,14 +1,12 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { 
-  MobileSyncUploadRequest, 
+import {
+  MobileSyncUploadRequest,
   MobileSyncDownloadResponse,
-  MobileCaseResponse 
+  MobileCaseResponse
 } from '../types/mobile';
 import { createAuditLog } from '../utils/auditLogger';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
+import { query } from '@/config/database';
 
 export class MobileSyncController {
   // Upload offline changes from mobile app
@@ -86,15 +84,7 @@ export class MobileSyncController {
       }
 
       // Update device sync timestamp
-      await prisma.device.updateMany({
-        where: {
-          userId,
-          deviceId: deviceInfo.deviceId,
-        },
-        data: {
-          lastActiveAt: new Date(),
-        },
-      });
+      await query(`UPDATE devices SET "lastActiveAt" = CURRENT_TIMESTAMP WHERE "userId" = $1 AND "deviceId" = $2`, [userId, deviceInfo.deviceId]);
 
       await createAuditLog({
         action: 'MOBILE_SYNC_UPLOAD',
@@ -152,46 +142,23 @@ export class MobileSyncController {
         where.assignedToId = userId;
       }
 
-      const [updatedCases, deletedCases] = await Promise.all([
-        prisma.case.findMany({
-          where,
-          take: Number(limit),
-          orderBy: { updatedAt: 'asc' },
-          include: {
-            client: {
-              select: {
-                id: true,
-                name: true,
-                code: true,
-              },
-            },
-            assignedTo: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-              },
-            },
-            attachments: {
-              select: {
-                id: true,
-                filename: true,
-                originalName: true,
-                mimeType: true,
-                size: true,
-                url: true,
-                thumbnailUrl: true,
-                uploadedAt: true,
-                geoLocation: true,
-              },
-            },
+      const vals: any[] = [];
+      const wh: string[] = [];
+      if (where.assignedToId) { vals.push(where.assignedToId); wh.push(`c."assignedToId" = $${vals.length}`); }
+      if (where.updatedAt?.gt) { vals.push(where.updatedAt.gt); wh.push(`c."updatedAt" > $${vals.length}`); }
+      const whereSql = wh.length ? `WHERE ${wh.join(' AND ')}` : '';
+      vals.push(Number(limit));
 
-          },
-        }),
-        // Get deleted cases (if you track deletions)
-        // Note: deletedCase table doesn't exist in current schema
-        Promise.resolve([]),
-      ]);
+      const casesRes = await query(
+        `SELECT c.*, cl.id as client_id, cl.name as client_name, cl.code as client_code
+         FROM cases c LEFT JOIN clients cl ON cl.id = c."clientId"
+         ${whereSql}
+         ORDER BY c."updatedAt" ASC
+         LIMIT $${vals.length}`,
+        vals
+      );
+      const updatedCases = casesRes.rows;
+      const deletedCases: any[] = [];
 
       // Transform cases for mobile response
       const mobileCases: MobileCaseResponse[] = updatedCases.map(caseItem => ({
@@ -282,12 +249,8 @@ export class MobileSyncController {
       const userId = (req as any).user?.userId;
       const deviceId = req.headers['x-device-id'] as string;
 
-      const device = await prisma.device.findFirst({
-        where: {
-          userId,
-          deviceId,
-        },
-      });
+      const devRes = await query(`SELECT * FROM devices WHERE "userId" = $1 AND "deviceId" = $2 LIMIT 1`, [userId, deviceId]);
+      const device = devRes.rows[0];
 
       if (!device) {
         return res.status(404).json({
@@ -337,7 +300,11 @@ export class MobileSyncController {
           where.assignedToId = userId;
         }
 
-        const existingCase = await prisma.case.findFirst({ where });
+        const vals9: any[] = [id];
+        let exSql7 = `SELECT id, "updatedAt" FROM cases WHERE id = $1`;
+        if (userRole === 'FIELD') { exSql7 += ` AND "assignedToId" = $2`; vals9.push(userId); }
+        const exRes7 = await query(exSql7, vals9);
+        const existingCase = exRes7.rows[0];
         if (!existingCase) {
           throw new Error('Case not found or access denied');
         }
@@ -354,13 +321,16 @@ export class MobileSyncController {
         }
 
         // Update case
-        await prisma.case.update({
-          where: { id },
-          data: {
-            ...data,
-            updatedAt: new Date(),
-          },
-        });
+        const sets: string[] = [];
+        const vals10: any[] = [];
+        let idx = 1;
+        for (const [key, value] of Object.entries(data)) {
+          sets.push(`"${key}" = $${idx++}`);
+          vals10.push(value);
+        }
+        sets.push(`"updatedAt" = CURRENT_TIMESTAMP`);
+        vals10.push(id);
+        await query(`UPDATE cases SET ${sets.join(', ')} WHERE id = $${idx}`, vals10);
 
         syncResults.processedCases++;
         break;
@@ -371,14 +341,16 @@ export class MobileSyncController {
           throw new Error('Field users cannot create cases');
         }
 
-        await prisma.case.create({
-          data: {
-            ...data,
-            id,
-            createdAt: new Date(timestamp),
-            updatedAt: new Date(),
-          },
-        });
+        const cols: string[] = ['id', 'createdAt', 'updatedAt'];
+        const vals11: any[] = [id, new Date(timestamp), new Date()];
+        let idx2 = 4;
+        for (const [key, value] of Object.entries(data)) {
+          cols.push(`"${key}"`);
+          vals11.push(value);
+          idx2++;
+        }
+        const placeholders = vals11.map((_, i) => `$${i + 1}`).join(', ');
+        await query(`INSERT INTO cases (${cols.join(', ')}) VALUES (${placeholders})`, vals11);
 
         syncResults.processedCases++;
         break;
@@ -395,23 +367,23 @@ export class MobileSyncController {
     switch (action) {
       case 'CREATE':
         // Create attachment record (file should already be uploaded)
-        await prisma.attachment.create({
-          data: {
-            ...data,
-            id,
-            uploadedById: userId,
-            uploadedAt: new Date(timestamp),
-          },
-        });
+        const attCols: string[] = ['id', 'uploadedById', 'uploadedAt'];
+        const attVals: any[] = [id, userId, new Date(timestamp)];
+        let attIdx = 4;
+        for (const [key, value] of Object.entries(data)) {
+          attCols.push(`"${key}"`);
+          attVals.push(value);
+          attIdx++;
+        }
+        const attPlaceholders = attVals.map((_, i) => `$${i + 1}`).join(', ');
+        await query(`INSERT INTO attachments (${attCols.join(', ')}) VALUES (${attPlaceholders})`, attVals);
 
         syncResults.processedAttachments++;
         break;
 
       case 'DELETE':
         // Delete attachment
-        await prisma.attachment.delete({
-          where: { id },
-        });
+        await query(`DELETE FROM attachments WHERE id = $1`, [id]);
 
         syncResults.processedAttachments++;
         break;
@@ -425,17 +397,11 @@ export class MobileSyncController {
   private static async processLocationChange(locationChange: any, userId: string, syncResults: any) {
     const { id, data, timestamp } = locationChange;
 
-    await prisma.location.create({
-      data: {
-        id,
-        caseId: data.caseId,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        accuracy: data.accuracy,
-        timestamp: new Date(timestamp),
-        source: data.source || 'GPS',
-      },
-    });
+    await query(
+      `INSERT INTO locations (id, "caseId", latitude, longitude, accuracy, timestamp, source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, data.caseId, data.latitude, data.longitude, data.accuracy, new Date(timestamp), data.source || 'GPS']
+    );
 
     syncResults.processedLocations++;
   }

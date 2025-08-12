@@ -2,7 +2,7 @@ import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import app from '@/app';
 import { prisma } from '@/config/database';
-import { Role } from '@prisma/client';
+// Role is string in SQL Server schema; no enum import
 
 describe('Auth Controller', () => {
   describe('POST /api/auth/login', () => {
@@ -13,13 +13,14 @@ describe('Auth Controller', () => {
         data: {
           name: 'Test User',
           username: 'testuser',
+          password: 'testpassword',
           passwordHash,
           employeeId: 'TEST001',
           designation: 'Test Executive',
           department: 'Testing',
           phone: '+91-9876543210',
           email: 'test@example.com',
-          role: Role.FIELD,
+          role: 'FIELD',
         },
       });
     });
