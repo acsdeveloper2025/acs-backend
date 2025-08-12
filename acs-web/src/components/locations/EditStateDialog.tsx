@@ -154,8 +154,13 @@ export function EditStateDialog({ state, open, onOpenChange }: EditStateDialogPr
                     </FormControl>
                     <SelectContent>
                       {countries.map((country) => (
-                        <SelectItem key={country} value={country}>
-                          {country}
+                        <SelectItem key={country.id} value={country.name}>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-xs bg-gray-100 px-1 rounded">
+                              {country.code}
+                            </span>
+                            <span>{country.name}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>

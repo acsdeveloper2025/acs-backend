@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Search, Upload, MapPin, Building, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,7 +26,7 @@ import { CreatePincodeDialog } from '@/components/locations/CreatePincodeDialog'
 import { BulkImportLocationDialog } from '@/components/locations/BulkImportLocationDialog';
 
 export function LocationsPage() {
-  const [activeTab, setActiveTab] = useState('countries');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string>('all');
   const [selectedCountry, setSelectedCountry] = useState<string>('all');
@@ -36,6 +37,14 @@ export function LocationsPage() {
   const [showCreatePincode, setShowCreatePincode] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkImportType, setBulkImportType] = useState<'countries' | 'states' | 'cities' | 'pincodes'>('countries');
+
+  // Get active tab from URL or default to 'countries'
+  const activeTab = searchParams.get('tab') || 'countries';
+
+  // Handle tab change and update URL
+  const handleTabChange = (newTab: string) => {
+    setSearchParams({ tab: newTab });
+  };
 
   // Fetch data based on active tab and filters
   const { data: countriesData, isLoading: countriesLoading } = useQuery({
@@ -187,7 +196,7 @@ export function LocationsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
             <div className="flex items-center justify-between">
               <TabsList>
                 <TabsTrigger value="countries">
@@ -344,8 +353,13 @@ export function LocationsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Countries</SelectItem>
                     {countryNames.map((country) => (
-                      <SelectItem key={country} value={country}>
-                        {country}
+                      <SelectItem key={country.id} value={country.name}>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-xs bg-gray-100 px-1 rounded">
+                            {country.code}
+                          </span>
+                          <span>{country.name}</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
