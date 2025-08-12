@@ -19,7 +19,11 @@
     "db:push": "echo 'no-op (prisma removed)'",
     "db:migrate": "echo 'no-op (prisma removed)'",
     "db:migrate:deploy": "echo 'no-op (prisma removed)'",
-    "db:seed": "node scripts/seed.js"
+    "db:seed": "node scripts/seed.js",
+    "port:check": "lsof -i:3000 || echo 'Port 3000 is available'",
+    "port:kill": "lsof -ti:3000 | xargs kill -9 || echo 'No process found on port 3000'",
+    "services:check": "echo 'Checking required services...' && lsof -i:5432 && lsof -i:6379 && echo 'All services running'",
+    "start:force": "npm run port:kill && npm run build && npm start"
   },
   "_moduleAliases": {
     "@": "dist",

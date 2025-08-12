@@ -33,13 +33,24 @@ const startServer = async (): Promise<void> => {
     // Initialize job queues
     await initializeQueues();
     
-    // Start the server
+    // Start the server with strict port enforcement
     server.listen(config.port, () => {
       logger.info(`Server running on port ${config.port}`);
       logger.info(`Environment: ${config.nodeEnv}`);
       logger.info(`WebSocket server running on port ${config.port}`);
     });
-    
+
+    // Handle port already in use error
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`Port ${config.port} is already in use. Please free the port or stop the conflicting service.`);
+        process.exit(1);
+      } else {
+        logger.error('Server error:', error);
+        process.exit(1);
+      }
+    });
+
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

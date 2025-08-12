@@ -3,9 +3,24 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Validate that we're using the correct fixed ports
+const validatePorts = () => {
+  const requiredPort = 3000;
+  const configuredPort = parseInt(process.env.PORT || '3000', 10);
+
+  if (configuredPort !== requiredPort) {
+    console.error(`❌ Port mismatch: Backend must run on port ${requiredPort}, but PORT=${configuredPort} was configured.`);
+    console.error(`   Please update your environment to use PORT=${requiredPort} or remove the PORT environment variable.`);
+    process.exit(1);
+  }
+};
+
+// Run port validation
+validatePorts();
+
 export const config = {
-  // Server
-  port: parseInt(process.env.PORT || '3000', 10),
+  // Server - Fixed port 3000 (no automatic switching)
+  port: 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
   
   // Database
@@ -22,7 +37,7 @@ export const config = {
   redisPassword: process.env.REDIS_PASSWORD || '',
   
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN || ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3000'],
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
