@@ -112,8 +112,6 @@ export function VerificationTypesTable({ data, isLoading }: VerificationTypesTab
           <TableHeader>
             <TableRow>
               <TableHead>Type Name</TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Client</TableHead>
               <TableHead>Created Date</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -130,25 +128,7 @@ export function VerificationTypesTable({ data, isLoading }: VerificationTypesTab
                     <span>{type.name}</span>
                   </div>
                 </TableCell>
-                <TableCell>
-                  {type.product ? (
-                    <span className="font-medium">{type.product.name}</span>
-                  ) : (
-                    <span className="text-muted-foreground">No product</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {type.product?.client ? (
-                    <div className="space-y-1">
-                      <p className="font-medium">{type.product.client.name}</p>
-                      <Badge variant="outline" className="text-xs">
-                        {type.product.client.code}
-                      </Badge>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">No client</span>
-                  )}
-                </TableCell>
+
                 <TableCell>
                   {new Date(type.createdAt).toLocaleDateString()}
                 </TableCell>

@@ -43,8 +43,9 @@ export class ClientsService {
     return apiService.get(`/products/${id}`);
   }
 
-  async getProductsByClient(clientId: string): Promise<ApiResponse<Product[]>> {
-    return apiService.get(`/clients/${clientId}/products`);
+  async getProductsByClient(clientId: string, isActive?: boolean): Promise<ApiResponse<Product[]>> {
+    const params = isActive !== undefined ? { isActive } : {};
+    return apiService.get(`/clients/${clientId}/products`, params);
   }
 
   async createProduct(data: CreateProductData): Promise<ApiResponse<Product>> {
@@ -68,8 +69,9 @@ export class ClientsService {
     return apiService.get(`/verification-types/${id}`);
   }
 
-  async getVerificationTypesByProduct(productId: string): Promise<ApiResponse<VerificationType[]>> {
-    return apiService.get(`/products/${productId}/verification-types`);
+  async getVerificationTypesByClient(clientId: string, isActive?: boolean): Promise<ApiResponse<VerificationType[]>> {
+    const params = isActive !== undefined ? { isActive } : {};
+    return apiService.get(`/clients/${clientId}/verification-types`, params);
   }
 
   async createVerificationType(data: CreateVerificationTypeData): Promise<ApiResponse<VerificationType>> {

@@ -22,6 +22,7 @@ import { FormViewerPage } from '@/pages/FormViewerPage';
 import { SecurityUXPage } from '@/pages/SecurityUXPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ProductsPage } from '@/pages/ProductsPage';
+import { VerificationTypesPage } from '@/pages/VerificationTypesPage';
 
 // Default route component that handles authentication-based redirects
 const DefaultRoute: React.FC = () => {
@@ -127,6 +128,18 @@ export const AppRoutes: React.FC = () => {
           <ProtectedRoute requiredRoles={['ADMIN']}>
             <Layout>
               <ProductsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Verification Types routes */}
+      <Route
+        path="/verification-types"
+        element={
+          <ProtectedRoute requiredRoles={['ADMIN']}>
+            <Layout>
+              <VerificationTypesPage />
             </Layout>
           </ProtectedRoute>
         }

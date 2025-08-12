@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,20 +21,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import toast from 'react-hot-toast';
-import { clientsService } from '@/services/clients';
+import { productsService } from '@/services/products';
 
 const createProductSchema = z.object({
   name: z.string().min(1, 'Product name is required').max(100, 'Name too long'),
-  clientId: z.string().min(1, 'Client selection is required'),
+  code: z.string().min(2, 'Product code is required').max(50, 'Code too long'),
 });
 
 type CreateProductFormData = z.infer<typeof createProductSchema>;
@@ -51,22 +44,21 @@ export function CreateProductDialog({ open, onOpenChange }: CreateProductDialogP
     resolver: zodResolver(createProductSchema),
     defaultValues: {
       name: '',
-      clientId: '',
+      code: '',
     },
   });
 
-  // Fetch clients for the dropdown
-  const { data: clientsData } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => clientsService.getClients(),
-    enabled: open,
-  });
-
   const createMutation = useMutation({
-    mutationFn: (data: CreateProductFormData) => clientsService.createProduct(data),
+    mutationFn: (data: CreateProductFormData) => productsService.createProduct({
+      ...data,
+      category: 'OTHER',
+      basePrice: 0,
+      currency: 'INR',
+      pricingModel: 'PER_VERIFICATION',
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['product-stats'] });
       toast.success('Product created successfully');
       form.reset();
       onOpenChange(false);
@@ -80,15 +72,13 @@ export function CreateProductDialog({ open, onOpenChange }: CreateProductDialogP
     createMutation.mutate(data);
   };
 
-  const clients = clientsData?.data || [];
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Create New Product</DialogTitle>
           <DialogDescription>
-            Add a new product to a client. Products can have multiple verification types.
+            Create a standalone product that can be assigned to clients later. Products define the verification services you offer.
           </DialogDescription>
         </DialogHeader>
 
@@ -96,31 +86,15 @@ export function CreateProductDialog({ open, onOpenChange }: CreateProductDialogP
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
-              name="clientId"
+              name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Client</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a client" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          <div className="flex items-center space-x-2">
-                            <span>{client.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({client.code})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Product Code</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., LOAN_VERIFICATION" {...field} />
+                  </FormControl>
                   <FormDescription>
-                    Select the client this product belongs to
+                    Unique identifier for this product
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

@@ -53,8 +53,8 @@ cp .env.example .env.local
 
 Edit `.env.local` with your configuration:
 ```env
-VITE_API_URL=http://localhost:3001
-VITE_WS_URL=ws://localhost:3001
+VITE_API_URL=http://localhost:3000
+VITE_WS_URL=ws://localhost:3000
 VITE_APP_VERSION=1.0.0
 ```
 
@@ -146,8 +146,8 @@ acs-web/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VITE_API_URL` | Backend API URL | `http://localhost:3001` |
-| `VITE_WS_URL` | WebSocket URL | `ws://localhost:3001` |
+| `VITE_API_URL` | Backend API URL | `http://localhost:3000` |
+| `VITE_WS_URL` | WebSocket URL | `ws://localhost:3000` |
 | `VITE_APP_VERSION` | Application version | `1.0.0` |
 
 ### Vite Configuration
@@ -272,10 +272,13 @@ The application is fully responsive with:
 npm run build
 ```
 
-### Docker Deployment
+### Serving the production build locally
+You can use any static file server to serve the `dist/` folder after building. Example with `serve`:
 ```bash
-docker build -t acs-web .
-docker run -p 80:80 acs-web
+npm install -g serve
+npm run build
+serve -s dist -l 3001
+# Open http://localhost:3001
 ```
 
 ### Environment-specific Builds

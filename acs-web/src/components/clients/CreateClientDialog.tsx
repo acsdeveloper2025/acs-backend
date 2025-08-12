@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,8 +22,13 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import toast from 'react-hot-toast';
 import { clientsService } from '@/services/clients';
+import { productsService } from '@/services/products';
+import { verificationTypesService } from '@/services/verificationTypes';
 
 const createClientSchema = z.object({
   name: z.string().min(1, 'Client name is required').max(100, 'Name too long'),
@@ -31,6 +36,8 @@ const createClientSchema = z.object({
     .min(2, 'Client code must be at least 2 characters')
     .max(10, 'Client code must be at most 10 characters')
     .regex(/^[A-Z0-9_]+$/, 'Client code must contain only uppercase letters, numbers, and underscores'),
+  productIds: z.array(z.string()).optional(),
+  verificationTypeIds: z.array(z.string()).optional(),
 });
 
 type CreateClientFormData = z.infer<typeof createClientSchema>;
@@ -48,7 +55,23 @@ export function CreateClientDialog({ open, onOpenChange }: CreateClientDialogPro
     defaultValues: {
       name: '',
       code: '',
+      productIds: [],
+      verificationTypeIds: [],
     },
+  });
+
+  // Fetch products for selection
+  const { data: productsData } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => productsService.getProducts(),
+    enabled: open,
+  });
+
+  // Fetch verification types for selection
+  const { data: verificationTypesData } = useQuery({
+    queryKey: ['verification-types'],
+    queryFn: () => verificationTypesService.getVerificationTypes(),
+    enabled: open,
   });
 
   const createMutation = useMutation({
@@ -195,6 +218,108 @@ export function CreateClientDialog({ open, onOpenChange }: CreateClientDialogPro
                   <FormDescription>
                     Unique identifier for the client (uppercase letters, numbers, and underscores only)
                   </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Products Selection */}
+            <FormField
+              control={form.control}
+              name="productIds"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Products</FormLabel>
+                  <FormDescription>
+                    Select products to assign to this client (optional)
+                  </FormDescription>
+                  <ScrollArea className="h-32 w-full border rounded-md p-3">
+                    {productsData?.data?.length ? (
+                      <div className="space-y-2">
+                        {productsData.data.map((product) => (
+                          <div key={product.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`product-${product.id}`}
+                              checked={field.value?.includes(product.id) || false}
+                              onCheckedChange={(checked) => {
+                                const currentIds = field.value || [];
+                                if (checked) {
+                                  field.onChange([...currentIds, product.id]);
+                                } else {
+                                  field.onChange(currentIds.filter(id => id !== product.id));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={`product-${product.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              {product.name}
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                {product.code}
+                              </Badge>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        No products available. Create products first.
+                      </div>
+                    )}
+                  </ScrollArea>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Verification Types Selection */}
+            <FormField
+              control={form.control}
+              name="verificationTypeIds"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Verification Types</FormLabel>
+                  <FormDescription>
+                    Select verification types to assign to this client (optional)
+                  </FormDescription>
+                  <ScrollArea className="h-32 w-full border rounded-md p-3">
+                    {verificationTypesData?.data?.length ? (
+                      <div className="space-y-2">
+                        {verificationTypesData.data.map((verificationType) => (
+                          <div key={verificationType.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`vtype-${verificationType.id}`}
+                              checked={field.value?.includes(verificationType.id) || false}
+                              onCheckedChange={(checked) => {
+                                const currentIds = field.value || [];
+                                if (checked) {
+                                  field.onChange([...currentIds, verificationType.id]);
+                                } else {
+                                  field.onChange(currentIds.filter(id => id !== verificationType.id));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={`vtype-${verificationType.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              {verificationType.name}
+                              {verificationType.code && (
+                                <Badge variant="outline" className="ml-2 text-xs">
+                                  {verificationType.code}
+                                </Badge>
+                              )}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        No verification types available. Create verification types first.
+                      </div>
+                    )}
+                  </ScrollArea>
                   <FormMessage />
                 </FormItem>
               )}

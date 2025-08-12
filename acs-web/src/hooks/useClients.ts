@@ -35,7 +35,7 @@ export const verificationTypeKeys = {
   list: (filters: PaginationQuery) => [...verificationTypeKeys.lists(), filters] as const,
   details: () => [...verificationTypeKeys.all, 'detail'] as const,
   detail: (id: string) => [...verificationTypeKeys.details(), id] as const,
-  byProduct: (productId: string) => [...verificationTypeKeys.all, 'by-product', productId] as const,
+  byClient: (clientId: string) => [...verificationTypeKeys.all, 'by-client', clientId] as const,
 };
 
 // Client queries
@@ -94,11 +94,11 @@ export const useVerificationType = (id: string) => {
   });
 };
 
-export const useVerificationTypesByProduct = (productId: string) => {
+export const useVerificationTypesByClient = (clientId: string) => {
   return useQuery({
-    queryKey: verificationTypeKeys.byProduct(productId),
-    queryFn: () => clientsService.getVerificationTypesByProduct(productId),
-    enabled: !!productId,
+    queryKey: verificationTypeKeys.byClient(clientId),
+    queryFn: () => clientsService.getVerificationTypesByClient(clientId),
+    enabled: !!clientId,
   });
 };
 

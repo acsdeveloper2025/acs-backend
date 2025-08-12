@@ -27,14 +27,12 @@ export interface CreateProductData {
   name: string;
   code: string;
   description?: string;
-  category: string;
-  clientId: string;
-  pricing?: {
-    basePrice: number;
-    currency: string;
-    pricingModel: string;
-  };
-  verificationType?: string[];
+  category?: string;
+  basePrice?: number;
+  currency?: string;
+  pricingModel?: string;
+  clientIds?: string[]; // Optional array of client IDs to associate
+  verificationTypeIds?: string[]; // Optional array of verification type IDs to associate
   isActive?: boolean;
 }
 

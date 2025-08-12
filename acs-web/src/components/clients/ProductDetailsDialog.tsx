@@ -27,11 +27,8 @@ export function ProductDetailsDialog({ product, open, onOpenChange }: ProductDet
     enabled: open,
   });
 
-  const { data: verificationTypes } = useQuery({
-    queryKey: ['product-verification-types', product.id],
-    queryFn: () => clientsService.getVerificationTypesByProduct(product.id),
-    enabled: open,
-  });
+  // Note: Product details are independent of a specific client; verification types vary per client-product mapping.
+  const verificationTypes = { data: product.verificationTypes || [] } as any;
 
   const productData = productDetails?.data || product;
   const types = verificationTypes?.data || [];
@@ -74,16 +71,11 @@ export function ProductDetailsDialog({ product, open, onOpenChange }: ProductDet
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                       <Building2 className="h-4 w-4" />
-                      <span>Client</span>
+                      <span>Verification Types</span>
                     </div>
-                    {productData.client ? (
-                      <div className="space-y-1">
-                        <p className="font-medium">{productData.client.name}</p>
-                        <Badge variant="outline">{productData.client.code}</Badge>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground">No client assigned</p>
-                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Types vary per client-product mapping
+                    </p>
                   </div>
                   
                   <div className="space-y-2">

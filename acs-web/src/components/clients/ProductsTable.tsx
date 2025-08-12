@@ -119,7 +119,6 @@ export function ProductsTable({ data, isLoading }: ProductsTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Product Name</TableHead>
-              <TableHead>Client</TableHead>
               <TableHead>Verification Types</TableHead>
               <TableHead>Created Date</TableHead>
               <TableHead>Status</TableHead>
@@ -137,18 +136,7 @@ export function ProductsTable({ data, isLoading }: ProductsTableProps) {
                     <span>{product.name}</span>
                   </div>
                 </TableCell>
-                <TableCell>
-                  {product.client ? (
-                    <div className="space-y-1">
-                      <p className="font-medium">{product.client.name}</p>
-                      <Badge variant="outline" className="text-xs">
-                        {product.client.code}
-                      </Badge>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">No client</span>
-                  )}
-                </TableCell>
+
                 <TableCell>
                   <span className="text-sm text-muted-foreground">
                     {product.verificationTypes?.length || 0} types

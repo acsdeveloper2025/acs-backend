@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,20 +21,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import toast from 'react-hot-toast';
-import { clientsService } from '@/services/clients';
+import { verificationTypesService } from '@/services/verificationTypes';
 
 const createVerificationTypeSchema = z.object({
   name: z.string().min(1, 'Verification type name is required').max(100, 'Name too long'),
-  productId: z.string().min(1, 'Product selection is required'),
+  code: z.string().min(2, 'Code is required').max(50, 'Code too long'),
 });
 
 type CreateVerificationTypeFormData = z.infer<typeof createVerificationTypeSchema>;
@@ -51,22 +44,20 @@ export function CreateVerificationTypeDialog({ open, onOpenChange }: CreateVerif
     resolver: zodResolver(createVerificationTypeSchema),
     defaultValues: {
       name: '',
-      productId: '',
+      code: '',
     },
   });
 
-  // Fetch products for the dropdown
-  const { data: productsData } = useQuery({
-    queryKey: ['products'],
-    queryFn: () => clientsService.getProducts(),
-    enabled: open,
-  });
-
   const createMutation = useMutation({
-    mutationFn: (data: CreateVerificationTypeFormData) => clientsService.createVerificationType(data),
+    mutationFn: (data: CreateVerificationTypeFormData) => verificationTypesService.createVerificationType({
+      ...data,
+      category: 'OTHER',
+      estimatedTime: 24,
+      basePrice: 0,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['verification-types'] });
-      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['verification-types-stats'] });
       toast.success('Verification type created successfully');
       form.reset();
       onOpenChange(false);
@@ -80,15 +71,13 @@ export function CreateVerificationTypeDialog({ open, onOpenChange }: CreateVerif
     createMutation.mutate(data);
   };
 
-  const products = productsData?.data || [];
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Create New Verification Type</DialogTitle>
           <DialogDescription>
-            Add a new verification type to a product.
+            Create a standalone verification type that can be assigned to products later.
           </DialogDescription>
         </DialogHeader>
 
@@ -96,31 +85,15 @@ export function CreateVerificationTypeDialog({ open, onOpenChange }: CreateVerif
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
-              name="productId"
+              name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a product" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          <div className="flex flex-col">
-                            <span>{product.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {product.client?.name} ({product.client?.code})
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Verification Type Code</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., RESIDENCE_VERIFICATION" {...field} />
+                  </FormControl>
                   <FormDescription>
-                    Select the product this verification type belongs to
+                    Unique identifier for this verification type
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
