@@ -1,14 +1,15 @@
 import express from 'express';
 import { body, query, param } from 'express-validator';
 import { authenticateToken } from '@/middleware/auth';
-import { validate } from '@/middleware/validation';
+import { handleValidationErrors } from '@/middleware/validation';
 import {
   getProducts,
   getProductById,
   createProduct,
   updateProduct,
   deleteProduct,
-  getProductsByClient
+  getProductsByClient,
+  getProductStats
 } from '@/controllers/productsController';
 
 const router = express.Router();
@@ -135,19 +136,19 @@ const clientProductsValidation = [
 ];
 
 // Core CRUD routes
-router.get('/', 
-  listProductsValidation, 
-  validate, 
+router.get('/',
+  listProductsValidation,
+  handleValidationErrors,
   getProducts
 );
 
 // TODO: Implement these endpoints
 // router.get('/categories', getProductCategories);
-// router.get('/stats', getProductStats);
+router.get('/stats', getProductStats);
 
-router.post('/', 
-  createProductValidation, 
-  validate, 
+router.post('/',
+  createProductValidation,
+  handleValidationErrors,
   createProduct
 );
 
@@ -158,22 +159,22 @@ router.post('/',
 //   bulkImportProducts
 // );
 
-router.get('/:id', 
-  [param('id').trim().notEmpty().withMessage('Product ID is required')], 
-  validate, 
+router.get('/:id',
+  [param('id').trim().notEmpty().withMessage('Product ID is required')],
+  handleValidationErrors,
   getProductById
 );
 
-router.put('/:id', 
-  [param('id').trim().notEmpty().withMessage('Product ID is required')], 
-  updateProductValidation, 
-  validate, 
+router.put('/:id',
+  [param('id').trim().notEmpty().withMessage('Product ID is required')],
+  updateProductValidation,
+  handleValidationErrors,
   updateProduct
 );
 
-router.delete('/:id', 
-  [param('id').trim().notEmpty().withMessage('Product ID is required')], 
-  validate, 
+router.delete('/:id',
+  [param('id').trim().notEmpty().withMessage('Product ID is required')],
+  handleValidationErrors,
   deleteProduct
 );
 

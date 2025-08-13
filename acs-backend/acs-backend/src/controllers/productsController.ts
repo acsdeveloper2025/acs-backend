@@ -1,0 +1,301 @@
+import { Response } from 'express';
+import { logger } from '@/config/logger';
+import { AuthenticatedRequest } from '@/middleware/auth';
+import { pool, query, withTransaction } from '@/config/database';
+import { randomUUID } from 'crypto';
+
+// GET /api/products - List products with pagination and filters
+export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20, 
+      search, 
+      sortBy = 'name', 
+      sortOrder = 'asc' 
+    } = req.query;
+
+    // Build where clause (basic search on name/code)
+    const values: any[] = [];
+    const whereSql: string[] = [];
+    if (search) {
+      values.push(`%${String(search)}%`);
+      values.push(`%${String(search)}%`);
+      whereSql.push('(name ILIKE $1 OR code ILIKE $2)');
+    }
+    const whereClause = whereSql.length ? `WHERE ${whereSql.join(' AND ')}` : '';
+
+    // Get total count
+    const countRes = await query<{ count: string }>(`SELECT COUNT(*)::text as count FROM products ${whereClause}`, values);
+    const totalCount = Number(countRes.rows[0]?.count || 0);
+
+    // Get products with pagination
+    const offset = (Number(page) - 1) * Number(limit);
+    const sortCol = ['name', 'code', 'createdAt', 'updatedAt'].includes(String(sortBy)) ? String(sortBy) : 'name';
+    const sortDir = String(sortOrder).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+    const listRes = await query(
+      `SELECT id, name, code, createdAt, updatedAt
+       FROM products
+       ${whereClause}
+       ORDER BY ${sortCol} ${sortDir}
+       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, Number(limit), offset]
+    );
+    const products = listRes.rows;
+
+    logger.info(`Retrieved ${products.length} products from database`, {
+      userId: req.user?.id,
+      page: Number(page),
+      limit: Number(limit),
+      search: search || '',
+      total: totalCount
+    });
+
+    res.json({
+      success: true,
+      data: products,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit)),
+      },
+    });
+  } catch (error) {
+    logger.error('Error retrieving products:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve products',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// GET /api/products/:id - Get product by ID
+export const getProductById = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const productRes = await query(`SELECT id, name, code, createdAt, updatedAt FROM products WHERE id = $1`, [id]);
+    const product = productRes.rows[0];
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found',
+        error: { code: 'NOT_FOUND' },
+      });
+    }
+
+    logger.info(`Retrieved product ${id}`, { userId: req.user?.id });
+
+    res.json({
+      success: true,
+      data: product,
+    });
+  } catch (error) {
+    logger.error('Error retrieving product:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve product',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// POST /api/products - Create new product
+export const createProduct = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { 
+      name, 
+      code
+    } = req.body;
+
+    // Check if product code already exists
+    const dupRes = await query(`SELECT 1 FROM products WHERE code = $1`, [code]);
+    if (dupRes.rowCount && dupRes.rowCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product code already exists',
+        error: { code: 'DUPLICATE_CODE' },
+      });
+    }
+
+    // Create product in database
+    const insertRes = await query(
+      `INSERT INTO products (id, name, code, createdAt)
+       VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP)
+       RETURNING id, name, code, createdAt, updatedAt`,
+      [name, code]
+    );
+    const newProduct = insertRes.rows[0];
+
+    logger.info(`Created new product: ${newProduct.id}`, { 
+      userId: req.user?.id,
+      productName: name,
+      productCode: code
+    });
+
+    res.status(201).json({
+      success: true,
+      data: newProduct,
+      message: 'Product created successfully',
+    });
+  } catch (error) {
+    logger.error('Error creating product:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create product',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// PUT /api/products/:id - Update product
+export const updateProduct = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body as { name?: string; code?: string };
+
+    // Check if product exists
+    const existingRes = await query(`SELECT id, name, code FROM products WHERE id = $1`, [id]);
+    const existingProduct = existingRes.rows[0];
+
+    if (!existingProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found',
+        error: { code: 'NOT_FOUND' },
+      });
+    }
+
+    // Check for duplicate code if being updated
+    if (updateData.code && updateData.code !== existingProduct.code) {
+      const dupRes = await query(`SELECT 1 FROM products WHERE code = $1`, [updateData.code]);
+      if (dupRes.rowCount && dupRes.rowCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Product code already exists',
+          error: { code: 'DUPLICATE_CODE' },
+        });
+      }
+    }
+
+    // Prepare update data
+    const updatePayload: any = {};
+    
+    if (updateData.name) updatePayload.name = updateData.name;
+    if (updateData.code) updatePayload.code = updateData.code;
+
+    // Build dynamic update
+    const sets: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    for (const key of Object.keys(updatePayload)) {
+      sets.push(`${key} = $${idx++}`);
+      vals.push((updatePayload as any)[key]);
+    }
+    sets.push(`updatedAt = CURRENT_TIMESTAMP`);
+    vals.push(id);
+
+    const updRes = await query(
+      `UPDATE products SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, name, code, createdAt, updatedAt`,
+      vals
+    );
+    const updatedProduct = updRes.rows[0];
+
+    logger.info(`Updated product: ${id}`, {
+      userId: req.user?.id,
+      productId: id,
+      updates: Object.keys(updatePayload)
+    });
+
+    res.json({
+      success: true,
+      data: updatedProduct,
+      message: 'Product updated successfully',
+    });
+  } catch (error) {
+    logger.error('Error updating product:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update product',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// DELETE /api/products/:id - Delete product
+export const deleteProduct = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if product exists
+    const existRes = await query(`SELECT id, name FROM products WHERE id = $1`, [id]);
+    const existingProduct = existRes.rows[0];
+
+    if (!existingProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found',
+        error: { code: 'NOT_FOUND' },
+      });
+    }
+
+    // Delete product
+    await query(`DELETE FROM products WHERE id = $1`, [id]);
+
+    logger.info(`Deleted product: ${id}`, { 
+      userId: req.user?.id,
+      productId: id,
+      productName: existingProduct.name
+    });
+
+    res.json({
+      success: true,
+      message: 'Product deleted successfully',
+    });
+  } catch (error) {
+    logger.error('Error deleting product:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete product',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// GET /api/clients/:id/products - Get products mapped to a client
+export const getProductsByClient = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: clientId } = req.params;
+    const { isActive } = req.query as { isActive?: string };
+
+    // Build where clause for mapping table
+    const values: any[] = [clientId];
+    const activeClause = typeof isActive !== 'undefined' ? 'AND cp."isActive" = $2' : '';
+    if (typeof isActive !== 'undefined') values.push(String(isActive) === 'true');
+    const mapRes = await query(
+      `SELECT p.id, p.name, p.code, p."createdAt", p."updatedAt"
+       FROM client_products cp
+       JOIN products p ON p.id = cp."productId"
+       WHERE cp."clientId" = $1 ${activeClause}
+      `,
+      values
+    );
+    const products = mapRes.rows;
+
+    logger.info(`Retrieved ${products.length} products for client ${clientId}`, { userId: req.user?.id });
+
+    res.json({
+      success: true,
+      data: products,
+    });
+  } catch (error) {
+    logger.error('Error retrieving products by client:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve products',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};

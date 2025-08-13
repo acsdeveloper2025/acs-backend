@@ -34,10 +34,10 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
     const sortCol = ['name', 'code', 'createdAt', 'updatedAt'].includes(String(sortBy)) ? String(sortBy) : 'name';
     const sortDir = String(sortOrder).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
     const listRes = await query(
-      `SELECT id, name, code, createdAt, updatedAt
+      `SELECT id, name, code, "createdAt", "updatedAt"
        FROM products
        ${whereClause}
-       ORDER BY ${sortCol} ${sortDir}
+       ORDER BY "${sortCol}" ${sortDir}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, Number(limit), offset]
     );
@@ -75,7 +75,7 @@ export const getProducts = async (req: AuthenticatedRequest, res: Response) => {
 export const getProductById = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const productRes = await query(`SELECT id, name, code, createdAt, updatedAt FROM products WHERE id = $1`, [id]);
+    const productRes = await query(`SELECT id, name, code, "createdAt", "updatedAt" FROM products WHERE id = $1`, [id]);
     const product = productRes.rows[0];
 
     if (!product) {
@@ -104,9 +104,10 @@ export const getProductById = async (req: AuthenticatedRequest, res: Response) =
 
 // POST /api/products - Create new product
 export const createProduct = async (req: AuthenticatedRequest, res: Response) => {
+  console.log('🚀 createProduct called with body:', JSON.stringify(req.body, null, 2));
   try {
-    const { 
-      name, 
+    const {
+      name,
       code
     } = req.body;
 
@@ -122,9 +123,9 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response) =>
 
     // Create product in database
     const insertRes = await query(
-      `INSERT INTO products (id, name, code, createdAt)
-       VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP)
-       RETURNING id, name, code, createdAt, updatedAt`,
+      `INSERT INTO products (id, name, code, "createdAt", "updatedAt")
+       VALUES (gen_random_uuid()::text, $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       RETURNING id, name, code, "createdAt", "updatedAt"`,
       [name, code]
     );
     const newProduct = insertRes.rows[0];
@@ -295,6 +296,38 @@ export const getProductsByClient = async (req: AuthenticatedRequest, res: Respon
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve products',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// GET /api/products/stats - Get product statistics
+export const getProductStats = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // Get total count
+    const totalRes = await query(`SELECT COUNT(*)::int as total FROM products`);
+    const total = totalRes.rows[0]?.total || 0;
+
+    // For now, return basic stats since the products table doesn't have isActive or category columns
+    const stats = {
+      total,
+      active: total, // Assuming all products are active since no isActive column
+      inactive: 0,
+      byCategory: {
+        'OTHER': total // Default category since no category column
+      }
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+      message: 'Product statistics retrieved successfully',
+    });
+  } catch (error) {
+    logger.error('Error retrieving product statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve product statistics',
       error: { code: 'INTERNAL_ERROR' },
     });
   }

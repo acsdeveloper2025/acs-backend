@@ -50,10 +50,8 @@ export function CreateVerificationTypeDialog({ open, onOpenChange }: CreateVerif
 
   const createMutation = useMutation({
     mutationFn: (data: CreateVerificationTypeFormData) => verificationTypesService.createVerificationType({
-      ...data,
-      category: 'OTHER',
-      estimatedTime: 24,
-      basePrice: 0,
+      name: data.name,
+      code: data.code,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['verification-types'] });

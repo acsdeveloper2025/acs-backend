@@ -22,7 +22,9 @@ export const getVerificationTypes = async (req: AuthenticatedRequest, res: Respo
     const totalCount = Number(countRes.rows[0]?.count || 0);
 
     // Get verification types with pagination
-    const vtRes = await query(`SELECT * FROM verification_types ORDER BY ${sortBy} ${sortOrder} LIMIT $1 OFFSET $2`, [Number(limit), (Number(page) - 1) * Number(limit)]);
+    const sortCol = ['name', 'code', 'category', 'basePrice', 'estimatedTime', 'createdAt', 'updatedAt'].includes(String(sortBy)) ? String(sortBy) : 'name';
+    const sortDir = String(sortOrder).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+    const vtRes = await query(`SELECT * FROM verification_types ORDER BY "${sortCol}" ${sortDir} LIMIT $1 OFFSET $2`, [Number(limit), (Number(page) - 1) * Number(limit)]);
     const verificationTypes = vtRes.rows;
 
     logger.info(`Retrieved ${verificationTypes.length} verification types from database`, {
@@ -239,6 +241,38 @@ export const deleteVerificationType = async (req: AuthenticatedRequest, res: Res
     res.status(500).json({
       success: false,
       message: 'Failed to delete verification type',
+      error: { code: 'INTERNAL_ERROR' },
+    });
+  }
+};
+
+// GET /api/verification-types/stats - Get verification type statistics
+export const getVerificationTypeStats = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // Get total count
+    const totalRes = await query(`SELECT COUNT(*)::int as total FROM verification_types`);
+    const total = totalRes.rows[0]?.total || 0;
+
+    // For now, return basic stats since the verification_types table doesn't have isActive or category columns
+    const stats = {
+      total,
+      active: total, // Assuming all verification types are active since no isActive column
+      inactive: 0,
+      byCategory: {
+        'OTHER': total // Default category since no category column
+      }
+    };
+
+    res.json({
+      success: true,
+      data: stats,
+      message: 'Verification type statistics retrieved successfully',
+    });
+  } catch (error) {
+    logger.error('Error retrieving verification type statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve verification type statistics',
       error: { code: 'INTERNAL_ERROR' },
     });
   }

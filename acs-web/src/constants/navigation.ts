@@ -107,16 +107,30 @@ export const navigationItems: NavigationItem[] = [
     roles: ['ADMIN'],
     children: [
       {
+        id: 'countries',
+        label: 'Countries',
+        href: '/locations?tab=countries',
+        icon: MapPin,
+        roles: ['ADMIN'],
+      },
+      {
+        id: 'states',
+        label: 'States',
+        href: '/locations?tab=states',
+        icon: MapPin,
+        roles: ['ADMIN'],
+      },
+      {
         id: 'cities',
         label: 'Cities',
-        href: '/cities',
+        href: '/locations?tab=cities',
         icon: MapPin,
         roles: ['ADMIN'],
       },
       {
         id: 'pincodes',
         label: 'Pincodes',
-        href: '/pincodes',
+        href: '/locations?tab=pincodes',
         icon: MapPin,
         roles: ['ADMIN'],
       },

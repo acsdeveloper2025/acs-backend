@@ -1,0 +1,195 @@
+version: '3.8'
+
+# Development Environment Docker Compose
+# Optimized for development with hot reload and debugging
+
+services:
+  # SQL Server Database
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: crm-dev-sqlserver
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=DevPassword123!
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_dev_data:/var/opt/mssql
+    networks:
+      - crm-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P DevPassword123! -Q 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: crm-dev-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - crm-dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 3s
+      retries: 5
+
+  # Backend API (Development Mode)
+  backend-dev:
+    build:
+      context: ./acs-backend
+      target: development
+    container_name: crm-dev-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: sqlserver://sqlserver:1433;database=acs_backend;user=sa;password=DevPassword123!;trustServerCertificate=true
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-jwt-secret-not-for-production
+      JWT_REFRESH_SECRET: dev-refresh-secret-not-for-production
+      CORS_ORIGIN: "http://localhost:3001,http://localhost:5173,http://localhost:8080"
+      LOG_LEVEL: debug
+      DEBUG: "app:*"
+    ports:
+      - "3000:3000"
+      - "9229:9229"  # Node.js debugging port
+    volumes:
+      - ./acs-backend:/app
+      - /app/node_modules
+      - uploads_dev_data:/app/uploads
+      - logs_dev_data:/app/logs
+    networks:
+      - crm-dev-network
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["npm", "run", "dev"]
+
+  # Web Frontend (Development Mode)
+  web-frontend-dev:
+    build:
+      context: ./acs-web
+      target: development
+    container_name: crm-dev-web-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000
+      - VITE_APP_VERSION=dev
+      - NODE_ENV=development
+    ports:
+      - "3001:5173"
+    volumes:
+      - ./acs-web:/app
+      - /app/node_modules
+    networks:
+      - crm-dev-network
+    depends_on:
+      - backend-dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+  # Mobile App (Development Mode)
+  mobile-app-dev:
+    build:
+      context: ./caseflow-mobile
+      target: development
+    container_name: crm-dev-mobile-app
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000
+      - VITE_APP_VERSION=dev
+      - NODE_ENV=development
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./caseflow-mobile:/app
+      - /app/node_modules
+    networks:
+      - crm-dev-network
+    depends_on:
+      - backend-dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+  # Database Management
+  adminer:
+    image: adminer:latest
+    container_name: crm-dev-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: sqlserver
+      ADMINER_DESIGN: pepa-linha
+    networks:
+      - crm-dev-network
+    depends_on:
+      - sqlserver
+
+  # Redis Management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: crm-dev-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - crm-dev-network
+    depends_on:
+      - redis
+
+  # MailHog for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: crm-dev-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI port
+    networks:
+      - crm-dev-network
+
+  # File browser for uploads management
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: crm-dev-filebrowser
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    volumes:
+      - uploads_dev_data:/srv/uploads
+      - ./filebrowser.json:/config/settings.json
+    networks:
+      - crm-dev-network
+    environment:
+      - FB_DATABASE=/config/database.db
+      - FB_CONFIG=/config/settings.json
+
+volumes:
+  sqlserver_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  uploads_dev_data:
+    driver: local
+  logs_dev_data:
+    driver: local
+
+networks:
+  crm-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

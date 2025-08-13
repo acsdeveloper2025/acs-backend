@@ -18,7 +18,7 @@ import { locationsService } from '@/services/locations';
 interface BulkImportLocationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  type: 'cities' | 'pincodes';
+  type: 'countries' | 'states' | 'cities' | 'pincodes';
 }
 
 export function BulkImportLocationDialog({ open, onOpenChange, type }: BulkImportLocationDialogProps) {
@@ -30,7 +30,11 @@ export function BulkImportLocationDialog({ open, onOpenChange, type }: BulkImpor
 
   const importMutation = useMutation({
     mutationFn: (file: File) => {
-      if (type === 'cities') {
+      if (type === 'countries') {
+        return locationsService.bulkImportCountries(file);
+      } else if (type === 'states') {
+        return locationsService.bulkImportStates(file);
+      } else if (type === 'cities') {
         return locationsService.bulkImportCities(file);
       } else {
         return locationsService.bulkImportPincodes(file);
