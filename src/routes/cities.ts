@@ -8,8 +8,6 @@ import {
   createCity,
   updateCity,
   deleteCity,
-  bulkImportCities,
-  getStates,
   getCitiesStats
 } from '@/controllers/citiesController';
 import { getPincodesByCity } from '@/controllers/pincodesController';
@@ -30,41 +28,9 @@ const createCityValidation = [
     .isLength({ min: 1, max: 100 })
     .withMessage('State is required and must be less than 100 characters'),
   body('country')
-    .optional()
     .trim()
     .isLength({ min: 1, max: 100 })
-    .withMessage('Country must be less than 100 characters'),
-  body('code')
-    .trim()
-    .isLength({ min: 2, max: 10 })
-    .withMessage('City code must be between 2 and 10 characters')
-    .matches(/^[A-Z0-9]+$/)
-    .withMessage('City code must contain only uppercase letters and numbers'),
-  body('population')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Population must be a non-negative integer'),
-  body('area')
-    .optional()
-    .isNumeric()
-    .withMessage('Area must be a number'),
-  body('coordinates.latitude')
-    .optional()
-    .isFloat({ min: -90, max: 90 })
-    .withMessage('Latitude must be between -90 and 90'),
-  body('coordinates.longitude')
-    .optional()
-    .isFloat({ min: -180, max: 180 })
-    .withMessage('Longitude must be between -180 and 180'),
-  body('timezone')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Timezone must be less than 50 characters'),
-  body('isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('isActive must be a boolean'),
+    .withMessage('Country is required and must be less than 100 characters'),
 ];
 
 const updateCityValidation = [
@@ -83,38 +49,6 @@ const updateCityValidation = [
     .trim()
     .isLength({ min: 1, max: 100 })
     .withMessage('Country must be less than 100 characters'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 10 })
-    .withMessage('City code must be between 2 and 10 characters')
-    .matches(/^[A-Z0-9]+$/)
-    .withMessage('City code must contain only uppercase letters and numbers'),
-  body('population')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Population must be a non-negative integer'),
-  body('area')
-    .optional()
-    .isNumeric()
-    .withMessage('Area must be a number'),
-  body('coordinates.latitude')
-    .optional()
-    .isFloat({ min: -90, max: 90 })
-    .withMessage('Latitude must be between -90 and 90'),
-  body('coordinates.longitude')
-    .optional()
-    .isFloat({ min: -180, max: 180 })
-    .withMessage('Longitude must be between -180 and 180'),
-  body('timezone')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Timezone must be less than 50 characters'),
-  body('isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('isActive must be a boolean'),
 ];
 
 const listCitiesValidation = [
@@ -155,32 +89,6 @@ const listCitiesValidation = [
     .withMessage('Sort order must be asc or desc'),
 ];
 
-const bulkImportValidation = [
-  body('cities')
-    .isArray({ min: 1 })
-    .withMessage('Cities array is required'),
-  body('cities.*.name')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('City name is required and must be less than 100 characters'),
-  body('cities.*.state')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('State is required and must be less than 100 characters'),
-  body('cities.*.code')
-    .trim()
-    .isLength({ min: 2, max: 10 })
-    .withMessage('City code is required and must be between 2 and 10 characters'),
-];
-
-const statesValidation = [
-  query('country')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Country must be less than 100 characters'),
-];
-
 // Core CRUD routes
 router.get('/', 
   listCitiesValidation, 
@@ -188,24 +96,12 @@ router.get('/',
   getCities
 );
 
-router.get('/states', 
-  statesValidation, 
-  validate, 
-  getStates
-);
-
 router.get('/stats', getCitiesStats);
 
-router.post('/', 
-  createCityValidation, 
-  validate, 
+router.post('/',
+  createCityValidation,
+  validate,
   createCity
-);
-
-router.post('/bulk-import', 
-  bulkImportValidation, 
-  validate, 
-  bulkImportCities
 );
 
 router.get('/:id', 

@@ -24,8 +24,18 @@ export const getCountries = async (req: AuthenticatedRequest, res: Response) => 
       sortOrder = 'asc'
     } = req.query;
 
-    // Build SQL query with filters
-    let sql = 'SELECT * FROM countries WHERE 1=1';
+    // Build SQL query with filters and field name transformation
+    let sql = `
+      SELECT
+        id,
+        name,
+        code,
+        continent,
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      FROM countries
+      WHERE 1=1
+    `;
     const params: any[] = [];
     let paramCount = 0;
 
@@ -119,7 +129,15 @@ export const getCountryById = async (req: AuthenticatedRequest, res: Response) =
     const { id } = req.params;
 
     const result = await query<Country>(
-      'SELECT * FROM countries WHERE id = $1',
+      `SELECT
+        id,
+        name,
+        code,
+        continent,
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      FROM countries
+      WHERE id = $1`,
       [id]
     );
 
@@ -173,7 +191,9 @@ export const createCountry = async (req: AuthenticatedRequest, res: Response) =>
 
     // Create new country
     const result = await query<Country>(
-      'INSERT INTO countries (name, code, continent) VALUES ($1, $2, $3) RETURNING *',
+      `INSERT INTO countries (name, code, continent)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, code, continent, created_at as "createdAt", updated_at as "updatedAt"`,
       [name, code.toUpperCase(), continent]
     );
 
@@ -276,7 +296,8 @@ export const updateCountry = async (req: AuthenticatedRequest, res: Response) =>
     paramCount++;
     updateValues.push(id);
 
-    const updateSql = `UPDATE countries SET ${updateFields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    const updateSql = `UPDATE countries SET ${updateFields.join(', ')} WHERE id = $${paramCount}
+                       RETURNING id, name, code, continent, created_at as "createdAt", updated_at as "updatedAt"`;
     const result = await query<Country>(updateSql, updateValues);
 
     const updatedCountry = result.rows[0];

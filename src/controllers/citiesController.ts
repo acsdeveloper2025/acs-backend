@@ -1,129 +1,153 @@
 import { Request, Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import { query } from '@/config/db';
 
-// Mock data for demonstration (replace with actual database operations)
-let cities: any[] = [
-  {
-    id: 'city_1',
-    name: 'Mumbai',
-    state: 'Maharashtra',
-    country: 'India',
-    code: 'MUM',
-    isActive: true,
-    population: 12442373,
-    area: 603.4, // sq km
-    coordinates: {
-      latitude: 19.0760,
-      longitude: 72.8777,
-    },
-    timezone: 'Asia/Kolkata',
-    pincodesCount: 156,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  },
-  {
-    id: 'city_2',
-    name: 'Delhi',
-    state: 'Delhi',
-    country: 'India',
-    code: 'DEL',
-    isActive: true,
-    population: 11034555,
-    area: 1484, // sq km
-    coordinates: {
-      latitude: 28.7041,
-      longitude: 77.1025,
-    },
-    timezone: 'Asia/Kolkata',
-    pincodesCount: 89,
-    createdAt: '2024-01-02T00:00:00.000Z',
-    updatedAt: '2024-01-02T00:00:00.000Z',
-  },
-  {
-    id: 'city_3',
-    name: 'Bangalore',
-    state: 'Karnataka',
-    country: 'India',
-    code: 'BLR',
-    isActive: true,
-    population: 8443675,
-    area: 741, // sq km
-    coordinates: {
-      latitude: 12.9716,
-      longitude: 77.5946,
-    },
-    timezone: 'Asia/Kolkata',
-    pincodesCount: 67,
-    createdAt: '2024-01-03T00:00:00.000Z',
-    updatedAt: '2024-01-03T00:00:00.000Z',
-  },
-];
+interface City {
+  id: string;
+  name: string;
+  state_id: string;
+  country_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 
 // GET /api/cities - List cities with pagination and filters
 export const getCities = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      state, 
-      country = 'India', 
-      isActive, 
-      search, 
-      sortBy = 'name', 
-      sortOrder = 'asc' 
+    const {
+      page = 1,
+      limit = 20,
+      state,
+      country = 'India',
+      isActive,
+      search,
+      sortBy = 'name',
+      sortOrder = 'asc'
     } = req.query;
 
-    let filteredCities = [...cities];
+    // Build SQL query with joins to get state and country names, and pincode counts
+    let sql = `
+      SELECT
+        c.id,
+        c.name,
+        s.name as state,
+        co.name as country,
+        c.created_at as "createdAt",
+        c.updated_at as "updatedAt",
+        COALESCE(p.pincode_count, 0) as pincode_count
+      FROM cities c
+      JOIN states s ON c.state_id = s.id
+      JOIN countries co ON c.country_id = co.id
+      LEFT JOIN (
+        SELECT city_id, COUNT(*) as pincode_count
+        FROM pincodes
+        GROUP BY city_id
+      ) p ON c.id = p.city_id
+      WHERE 1=1
+    `;
+
+    const params: any[] = [];
+    let paramCount = 0;
 
     // Apply filters
     if (state) {
-      filteredCities = filteredCities.filter(city => city.state === state);
+      paramCount++;
+      sql += ` AND s.name = $${paramCount}`;
+      params.push(state);
     }
+
     if (country) {
-      filteredCities = filteredCities.filter(city => city.country === country);
+      paramCount++;
+      sql += ` AND co.name = $${paramCount}`;
+      params.push(country);
     }
-    if (isActive !== undefined) {
-      filteredCities = filteredCities.filter(city => city.isActive === (isActive === 'true'));
-    }
+
     if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredCities = filteredCities.filter(city => 
-        city.name.toLowerCase().includes(searchTerm) ||
-        city.state.toLowerCase().includes(searchTerm) ||
-        city.code.toLowerCase().includes(searchTerm)
-      );
+      paramCount++;
+      sql += ` AND (LOWER(c.name) LIKE $${paramCount} OR LOWER(s.name) LIKE $${paramCount} OR LOWER(co.name) LIKE $${paramCount})`;
+      params.push(`%${(search as string).toLowerCase()}%`);
     }
 
     // Apply sorting
-    filteredCities.sort((a, b) => {
-      const aValue = a[sortBy as string];
-      const bValue = b[sortBy as string];
-      if (sortOrder === 'desc') {
-        return bValue > aValue ? 1 : -1;
-      }
-      return aValue > bValue ? 1 : -1;
-    });
+    const validSortFields = ['name', 'state', 'country', 'createdAt', 'updatedAt'];
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy : 'name';
+    const sortDirection = sortOrder === 'desc' ? 'DESC' : 'ASC';
+
+    if (sortField === 'state') {
+      sql += ` ORDER BY s.name ${sortDirection}`;
+    } else if (sortField === 'country') {
+      sql += ` ORDER BY co.name ${sortDirection}`;
+    } else {
+      sql += ` ORDER BY c.${sortField} ${sortDirection}`;
+    }
 
     // Apply pagination
-    const startIndex = ((page as number) - 1) * (limit as number);
-    const endIndex = startIndex + (limit as number);
-    const paginatedCities = filteredCities.slice(startIndex, endIndex);
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const offset = (pageNum - 1) * limitNum;
 
-    logger.info(`Retrieved ${paginatedCities.length} cities`, { 
+    paramCount++;
+    sql += ` LIMIT $${paramCount}`;
+    params.push(limitNum);
+
+    paramCount++;
+    sql += ` OFFSET $${paramCount}`;
+    params.push(offset);
+
+    // Execute query
+    const result = await query(sql, params);
+
+    // Get total count for pagination
+    let countSql = `
+      SELECT COUNT(*)
+      FROM cities c
+      JOIN states s ON c.state_id = s.id
+      JOIN countries co ON c.country_id = co.id
+      WHERE 1=1
+    `;
+    const countParams: any[] = [];
+    let countParamCount = 0;
+
+    if (state) {
+      countParamCount++;
+      countSql += ` AND s.name = $${countParamCount}`;
+      countParams.push(state);
+    }
+
+    if (country) {
+      countParamCount++;
+      countSql += ` AND co.name = $${countParamCount}`;
+      countParams.push(country);
+    }
+
+    if (search) {
+      countParamCount++;
+      countSql += ` AND (LOWER(c.name) LIKE $${countParamCount} OR LOWER(s.name) LIKE $${countParamCount} OR LOWER(co.name) LIKE $${countParamCount})`;
+      countParams.push(`%${(search as string).toLowerCase()}%`);
+    }
+
+    const countResult = await query<{ count: string }>(countSql, countParams);
+    const totalCount = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    logger.info(`Retrieved ${result.rows.length} cities`, {
       userId: req.user?.id,
-      filters: { state, country, isActive, search },
-      pagination: { page, limit }
+      filters: { state, country, search },
+      pagination: { page: pageNum, limit: limitNum }
     });
 
     res.json({
       success: true,
-      data: paginatedCities,
+      data: result.rows,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total: filteredCities.length,
-        totalPages: Math.ceil(filteredCities.length / (limit as number)),
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        pages: totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
       },
     });
   } catch (error) {
@@ -140,9 +164,23 @@ export const getCities = async (req: AuthenticatedRequest, res: Response) => {
 export const getCityById = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const city = cities.find(c => c.id === id);
 
-    if (!city) {
+    const result = await query(
+      `SELECT
+        c.id,
+        c.name,
+        s.name as state,
+        co.name as country,
+        c.created_at as "createdAt",
+        c.updated_at as "updatedAt"
+       FROM cities c
+       JOIN states s ON c.state_id = s.id
+       JOIN countries co ON c.country_id = co.id
+       WHERE c.id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'City not found',
@@ -150,6 +188,7 @@ export const getCityById = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
+    const city = result.rows[0];
     logger.info(`Retrieved city ${id}`, { userId: req.user?.id });
 
     res.json({
@@ -169,56 +208,105 @@ export const getCityById = async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/cities - Create new city
 export const createCity = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { 
-      name, 
-      state, 
-      country = 'India', 
-      code, 
-      population, 
-      area, 
-      coordinates, 
-      timezone = 'Asia/Kolkata', 
-      isActive = true 
-    } = req.body;
+    logger.info('Creating city with data:', { body: req.body, userId: req.user?.id });
+    const { name, state, country } = req.body;
 
-    // Check if city code already exists
-    const existingCity = cities.find(c => c.code === code);
-    if (existingCity) {
+    if (!name || !state || !country) {
+      logger.error('Missing required fields:', { name, state, country });
       return res.status(400).json({
         success: false,
-        message: 'City code already exists',
-        error: { code: 'DUPLICATE_CODE' },
+        message: 'Name, state, and country are required',
+        error: { code: 'MISSING_REQUIRED_FIELDS' },
       });
     }
 
-    const newCity = {
-      id: `city_${Date.now()}`,
-      name,
-      state,
-      country,
-      code,
-      population: population || 0,
-      area: area || 0,
-      coordinates: coordinates || { latitude: 0, longitude: 0 },
-      timezone,
-      pincodesCount: 0,
-      isActive,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Get state_id and country_id
+    logger.info('Looking up state:', { state });
+    const stateResult = await query<{ id: string }>(
+      'SELECT id FROM states WHERE name = $1',
+      [state]
+    );
 
-    cities.push(newCity);
+    if (stateResult.rows.length === 0) {
+      logger.error('State not found:', { state });
+      return res.status(400).json({
+        success: false,
+        message: 'State not found',
+        error: { code: 'STATE_NOT_FOUND' },
+      });
+    }
 
-    logger.info(`Created new city: ${newCity.id}`, { 
+    logger.info('Looking up country:', { country });
+    const countryResult = await query<{ id: string }>(
+      'SELECT id FROM countries WHERE name = $1',
+      [country]
+    );
+
+    if (countryResult.rows.length === 0) {
+      logger.error('Country not found:', { country });
+      return res.status(400).json({
+        success: false,
+        message: 'Country not found',
+        error: { code: 'COUNTRY_NOT_FOUND' },
+      });
+    }
+
+    const stateId = stateResult.rows[0].id;
+    const countryId = countryResult.rows[0].id;
+
+    // Check if city already exists in this state
+    const existingCity = await query<{ id: string }>(
+      'SELECT id FROM cities WHERE name = $1 AND state_id = $2',
+      [name, stateId]
+    );
+
+    if (existingCity.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'City already exists in this state',
+        error: { code: 'DUPLICATE_CITY' },
+      });
+    }
+
+    // Insert new city
+    const insertResult = await query<City>(
+      `INSERT INTO cities (name, state_id, country_id, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       RETURNING id, name, state_id, country_id, created_at, updated_at`,
+      [name, stateId, countryId]
+    );
+
+    const newCity = insertResult.rows[0];
+
+    // Get the full city data with state and country names
+    const fullCityResult = await query(
+      `SELECT
+        c.id,
+        c.name,
+        s.name as state,
+        co.name as country,
+        c.created_at as "createdAt",
+        c.updated_at as "updatedAt"
+       FROM cities c
+       JOIN states s ON c.state_id = s.id
+       JOIN countries co ON c.country_id = co.id
+       WHERE c.id = $1`,
+      [newCity.id]
+    );
+
+    const cityData = fullCityResult.rows[0];
+
+    logger.info(`Created new city: ${cityData.name}`, {
       userId: req.user?.id,
-      cityName: name,
-      state,
-      code
+      cityId: cityData.id,
+      cityName: cityData.name,
+      state: cityData.state,
+      country: cityData.country
     });
 
     res.status(201).json({
       success: true,
-      data: newCity,
+      data: cityData,
       message: 'City created successfully',
     });
   } catch (error) {
@@ -235,10 +323,23 @@ export const createCity = async (req: AuthenticatedRequest, res: Response) => {
 export const updateCity = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const { name, state, country } = req.body;
 
-    const cityIndex = cities.findIndex(c => c.id === id);
-    if (cityIndex === -1) {
+    if (!name || !state || !country) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, state, and country are required',
+        error: { code: 'MISSING_REQUIRED_FIELDS' },
+      });
+    }
+
+    // Check if city exists
+    const existingCity = await query<{ id: string }>(
+      'SELECT id FROM cities WHERE id = $1',
+      [id]
+    );
+
+    if (existingCity.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'City not found',
@@ -246,30 +347,67 @@ export const updateCity = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    // Check for duplicate code if being updated
-    if (updateData.code) {
-      const existingCity = cities.find(c => c.id !== id && c.code === updateData.code);
-      if (existingCity) {
-        return res.status(400).json({
-          success: false,
-          message: 'City code already exists',
-          error: { code: 'DUPLICATE_CODE' },
-        });
-      }
+    // Get state_id and country_id
+    const stateResult = await query<{ id: string }>(
+      'SELECT id FROM states WHERE name = $1',
+      [state]
+    );
+
+    if (stateResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'State not found',
+        error: { code: 'STATE_NOT_FOUND' },
+      });
     }
 
+    const countryResult = await query<{ id: string }>(
+      'SELECT id FROM countries WHERE name = $1',
+      [country]
+    );
+
+    if (countryResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Country not found',
+        error: { code: 'COUNTRY_NOT_FOUND' },
+      });
+    }
+
+    const stateId = stateResult.rows[0].id;
+    const countryId = countryResult.rows[0].id;
+
     // Update city
-    const updatedCity = {
-      ...cities[cityIndex],
-      ...updateData,
-      updatedAt: new Date().toISOString(),
-    };
+    await query(
+      `UPDATE cities
+       SET name = $1, state_id = $2, country_id = $3, updated_at = NOW()
+       WHERE id = $4`,
+      [name, stateId, countryId, id]
+    );
 
-    cities[cityIndex] = updatedCity;
+    // Get updated city data
+    const updatedCityResult = await query(
+      `SELECT
+        c.id,
+        c.name,
+        s.name as state,
+        co.name as country,
+        c.created_at as "createdAt",
+        c.updated_at as "updatedAt"
+       FROM cities c
+       JOIN states s ON c.state_id = s.id
+       JOIN countries co ON c.country_id = co.id
+       WHERE c.id = $1`,
+      [id]
+    );
 
-    logger.info(`Updated city: ${id}`, { 
+    const updatedCity = updatedCityResult.rows[0];
+
+    logger.info(`Updated city: ${id}`, {
       userId: req.user?.id,
-      changes: Object.keys(updateData)
+      cityName: updatedCity.name,
+      state: updatedCity.state,
+      country: updatedCity.country
     });
 
     res.json({
@@ -292,8 +430,21 @@ export const deleteCity = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const cityIndex = cities.findIndex(c => c.id === id);
-    if (cityIndex === -1) {
+    // Get city info before deletion
+    const cityResult = await query(
+      `SELECT
+        c.id,
+        c.name,
+        s.name as state,
+        co.name as country
+       FROM cities c
+       JOIN states s ON c.state_id = s.id
+       JOIN countries co ON c.country_id = co.id
+       WHERE c.id = $1`,
+      [id]
+    );
+
+    if (cityResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'City not found',
@@ -301,12 +452,32 @@ export const deleteCity = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const deletedCity = cities[cityIndex];
-    cities.splice(cityIndex, 1);
+    const cityToDelete = cityResult.rows[0];
 
-    logger.info(`Deleted city: ${id}`, { 
+    // Check if city has associated pincodes
+    const pincodesResult = await query<{ count: string }>(
+      'SELECT COUNT(*) FROM pincodes WHERE city_id = $1',
+      [id]
+    );
+
+    const pincodesCount = parseInt(pincodesResult.rows[0].count, 10);
+    if (pincodesCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete city. It has ${pincodesCount} associated pincodes.`,
+        error: { code: 'HAS_DEPENDENCIES' },
+      });
+    }
+
+    // Delete city
+    await query('DELETE FROM cities WHERE id = $1', [id]);
+
+    logger.info(`Deleted city: ${cityToDelete.name}`, {
       userId: req.user?.id,
-      cityName: deletedCity.name
+      cityId: id,
+      cityName: cityToDelete.name,
+      state: cityToDelete.state,
+      country: cityToDelete.country
     });
 
     res.json({
@@ -323,149 +494,45 @@ export const deleteCity = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-// POST /api/cities/bulk-import - Bulk import cities
-export const bulkImportCities = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { cities: importCities } = req.body;
-
-    if (!importCities || !Array.isArray(importCities) || importCities.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cities array is required',
-        error: { code: 'MISSING_CITIES' },
-      });
-    }
-
-    const importedCities = [];
-    const errors = [];
-
-    for (let i = 0; i < importCities.length; i++) {
-      try {
-        const cityData = importCities[i];
-        const { name, state, country, code } = cityData;
-
-        // Validate required fields
-        if (!name || !state || !code) {
-          errors.push(`Row ${i + 1}: Name, state, and code are required`);
-          continue;
-        }
-
-        // Check for duplicate code
-        const existingCity = cities.find(c => c.code === code);
-        if (existingCity) {
-          errors.push(`Row ${i + 1}: City code '${code}' already exists`);
-          continue;
-        }
-
-        const newCity = {
-          id: `city_${Date.now()}_${i}`,
-          name,
-          state,
-          country: country || 'India',
-          code,
-          population: cityData.population || 0,
-          area: cityData.area || 0,
-          coordinates: cityData.coordinates || { latitude: 0, longitude: 0 },
-          timezone: cityData.timezone || 'Asia/Kolkata',
-          pincodesCount: 0,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        cities.push(newCity);
-        importedCities.push(newCity);
-      } catch (error) {
-        errors.push(`Row ${i + 1}: ${error}`);
-      }
-    }
-
-    logger.info(`Bulk imported ${importedCities.length} cities`, {
-      userId: req.user?.id,
-      successCount: importedCities.length,
-      errorCount: errors.length
-    });
-
-    res.status(201).json({
-      success: true,
-      data: {
-        imported: importedCities,
-        errors,
-        summary: {
-          total: importCities.length,
-          successful: importedCities.length,
-          failed: errors.length,
-        }
-      },
-      message: `Bulk import completed: ${importedCities.length} successful, ${errors.length} failed`,
-    });
-  } catch (error) {
-    logger.error('Error in bulk import:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk import cities',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
-// GET /api/cities/states - Get states list
-export const getStates = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { country = 'India' } = req.query;
-
-    // Get unique states from cities
-    const states = [...new Set(cities
-      .filter(city => city.country === country)
-      .map(city => city.state)
-    )].sort();
-
-    res.json({
-      success: true,
-      data: states,
-    });
-  } catch (error) {
-    logger.error('Error getting states:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get states',
-      error: { code: 'INTERNAL_ERROR' },
-    });
-  }
-};
-
 // GET /api/cities/stats - Get cities statistics
 export const getCitiesStats = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const totalCities = cities.length;
-    const activeCities = cities.filter(c => c.isActive).length;
-    const inactiveCities = totalCities - activeCities;
+    const totalResult = await query<{ count: string }>(
+      'SELECT COUNT(*) FROM cities'
+    );
 
-    const stateDistribution = cities.reduce((acc, city) => {
-      acc[city.state] = (acc[city.state] || 0) + 1;
+    const totalCities = parseInt(totalResult.rows[0].count, 10);
+
+    const stateDistributionResult = await query<{ state: string; count: string }>(
+      `SELECT s.name as state, COUNT(*) as count
+       FROM cities c
+       JOIN states s ON c.state_id = s.id
+       GROUP BY s.name
+       ORDER BY count DESC`
+    );
+
+    const countryDistributionResult = await query<{ country: string; count: string }>(
+      `SELECT co.name as country, COUNT(*) as count
+       FROM cities c
+       JOIN countries co ON c.country_id = co.id
+       GROUP BY co.name
+       ORDER BY count DESC`
+    );
+
+    const stateDistribution = stateDistributionResult.rows.reduce((acc, row) => {
+      acc[row.state] = parseInt(row.count, 10);
       return acc;
     }, {} as Record<string, number>);
 
-    const countryDistribution = cities.reduce((acc, city) => {
-      acc[city.country] = (acc[city.country] || 0) + 1;
+    const countryDistribution = countryDistributionResult.rows.reduce((acc, row) => {
+      acc[row.country] = parseInt(row.count, 10);
       return acc;
     }, {} as Record<string, number>);
-
-    const totalPopulation = cities.reduce((sum, city) => sum + (city.population || 0), 0);
-    const totalArea = cities.reduce((sum, city) => sum + (city.area || 0), 0);
-    const totalPincodes = cities.reduce((sum, city) => sum + (city.pincodesCount || 0), 0);
 
     const stats = {
       totalCities,
-      activeCities,
-      inactiveCities,
       stateDistribution,
       countryDistribution,
-      totalPopulation,
-      totalArea,
-      totalPincodes,
-      averagePopulation: totalCities > 0 ? Math.round(totalPopulation / totalCities) : 0,
-      averageArea: totalCities > 0 ? Math.round((totalArea / totalCities) * 100) / 100 : 0,
     };
 
     res.json({

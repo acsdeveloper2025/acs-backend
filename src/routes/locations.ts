@@ -53,27 +53,27 @@ const timezonesValidation = [
 ];
 
 // Location data routes
-router.get('/countries', 
-  countriesValidation, 
-  validate, 
+router.get('/countries',
+  countriesValidation,
+  validate,
   getCountries
 );
 
-router.get('/states', 
-  statesValidation, 
-  validate, 
+router.get('/states',
+  statesValidation,
+  validate,
   getStates
 );
 
-router.get('/regions', 
-  regionsValidation, 
-  validate, 
+router.get('/regions',
+  regionsValidation,
+  validate,
   getRegions
 );
 
-router.get('/timezones', 
-  timezonesValidation, 
-  validate, 
+router.get('/timezones',
+  timezonesValidation,
+  validate,
   getTimezones
 );
 

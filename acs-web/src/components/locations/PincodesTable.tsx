@@ -136,18 +136,18 @@ export function PincodesTable({ data, isLoading }: PincodesTableProps) {
                   <span className="font-medium">{pincode.area}</span>
                 </TableCell>
                 <TableCell>
-                  {pincode.city ? (
+                  {pincode.cityName ? (
                     <div className="flex items-center space-x-1">
                       <Building className="h-3 w-3 text-muted-foreground" />
-                      <span>{pincode.city.name}</span>
+                      <span>{pincode.cityName}</span>
                     </div>
                   ) : (
                     <span className="text-muted-foreground">No city</span>
                   )}
                 </TableCell>
                 <TableCell>
-                  {pincode.city ? (
-                    <Badge variant="outline">{pincode.city.state}</Badge>
+                  {pincode.state ? (
+                    <Badge variant="outline">{pincode.state}</Badge>
                   ) : (
                     <span className="text-muted-foreground">-</span>
                   )}

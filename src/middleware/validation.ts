@@ -32,12 +32,29 @@ export const handleValidationErrors = (
   next();
 };
 
-export const validate = (validations: ValidationChain[]) => {
+// Overloaded validate function to support both patterns:
+// 1. validate (simple middleware)
+// 2. validate(validationArray) (function that returns middleware)
+export function validate(req: Request, res: Response, next: NextFunction): void;
+export function validate(validations: ValidationChain[]): (req: Request, res: Response, next: NextFunction) => Promise<void>;
+export function validate(
+  reqOrValidations: Request | ValidationChain[],
+  res?: Response,
+  next?: NextFunction
+): void | ((req: Request, res: Response, next: NextFunction) => Promise<void>) {
+  // Pattern 1: validate(req, res, next) - simple middleware
+  if (res && next) {
+    handleValidationErrors(reqOrValidations as Request, res, next);
+    return;
+  }
+
+  // Pattern 2: validate(validations) - returns middleware function
+  const validations = reqOrValidations as ValidationChain[];
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Run all validations
     await Promise.all(validations.map(validation => validation.run(req)));
-    
+
     // Check for validation errors
     handleValidationErrors(req, res, next);
   };
-};
+}

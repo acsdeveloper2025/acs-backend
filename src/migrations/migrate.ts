@@ -53,7 +53,7 @@ function loadMigrations(): Migration[] {
       sql: readFileSync(join(__dirname, '001_create_location_tables.sql'), 'utf8')
     }
   ];
-  
+
   return migrations;
 }
 

@@ -219,8 +219,8 @@ export function LocationsPage() {
                     <SelectContent>
                       <SelectItem value="all">All States</SelectItem>
                       {states.map((state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
+                        <SelectItem key={state.id || state.name} value={state.name}>
+                          {state.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -233,8 +233,8 @@ export function LocationsPage() {
                     <SelectContent>
                       <SelectItem value="all">All Countries</SelectItem>
                       {countries.map((country) => (
-                        <SelectItem key={country} value={country}>
-                          {country}
+                        <SelectItem key={country.id} value={country.name}>
+                          {country.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

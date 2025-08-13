@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import { query } from '@/config/db';
 
 // Mock data for demonstration (replace with actual database operations)
 const countries = [
@@ -85,26 +86,22 @@ const states = [
 // GET /api/locations/countries - Get countries list
 export const getCountries = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { isActive } = req.query;
+    // Get countries from database
+    const sql = `
+      SELECT id, name, code, created_at as "createdAt", updated_at as "updatedAt"
+      FROM countries
+      ORDER BY name ASC
+    `;
 
-    let filteredCountries = [...countries];
+    const result = await query(sql);
 
-    // Apply active filter if specified
-    if (isActive !== undefined) {
-      filteredCountries = filteredCountries.filter(country => country.isActive === (isActive === 'true'));
-    }
-
-    // Sort by name
-    filteredCountries.sort((a, b) => a.name.localeCompare(b.name));
-
-    logger.info(`Retrieved ${filteredCountries.length} countries`, { 
-      userId: req.user?.id,
-      isActive
+    logger.info(`Retrieved ${result.rows.length} countries`, {
+      userId: req.user?.id
     });
 
     res.json({
       success: true,
-      data: filteredCountries,
+      data: result.rows,
     });
   } catch (error) {
     logger.error('Error retrieving countries:', error);
@@ -119,28 +116,41 @@ export const getCountries = async (req: AuthenticatedRequest, res: Response) => 
 // GET /api/locations/states - Get states list
 export const getStates = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { country = 'India', isActive } = req.query;
+    logger.info('getStates called', { country: req.query.country, userId: req.user?.id });
+    const { country = 'India' } = req.query;
 
-    let filteredStates = states.filter(state => state.country === country);
+    // Get states from database with country filter
+    let sql = `
+      SELECT s.id, s.name, s.code, c.name as country, s.created_at as "createdAt", s.updated_at as "updatedAt"
+      FROM states s
+      JOIN countries c ON s.country_id = c.id
+      WHERE c.name = $1
+      ORDER BY s.name ASC
+    `;
 
-    // Apply active filter if specified
-    if (isActive !== undefined) {
-      filteredStates = filteredStates.filter(state => state.isActive === (isActive === 'true'));
+    logger.info('About to execute query', { sql, params: [country] });
+
+    try {
+      const result = await query(sql, [country]);
+      logger.info('Query executed successfully', { rowCount: result.rows.length });
+
+      logger.info(`Retrieved ${result.rows.length} states for ${country}`, {
+        userId: req.user?.id,
+        country
+      });
+
+      res.json({
+        success: true,
+        data: result.rows,
+      });
+    } catch (queryError) {
+      logger.error('Database query failed:', queryError);
+      res.status(500).json({
+        success: false,
+        message: 'Database query failed',
+        error: { code: 'QUERY_ERROR' },
+      });
     }
-
-    // Sort by name
-    filteredStates.sort((a, b) => a.name.localeCompare(b.name));
-
-    logger.info(`Retrieved ${filteredStates.length} states for ${country}`, { 
-      userId: req.user?.id,
-      country,
-      isActive
-    });
-
-    res.json({
-      success: true,
-      data: filteredStates,
-    });
   } catch (error) {
     logger.error('Error retrieving states:', error);
     res.status(500).json({

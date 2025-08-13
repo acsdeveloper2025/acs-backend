@@ -164,8 +164,8 @@ export function CreateCityDialog({ open, onOpenChange }: CreateCityDialogProps) 
                     </FormControl>
                     <SelectContent>
                       {countries.map((country) => (
-                        <SelectItem key={country} value={country}>
-                          {country}
+                        <SelectItem key={country.id} value={country.name}>
+                          {country.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

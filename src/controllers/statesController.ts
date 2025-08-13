@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { logger } from '@/config/logger';
 import { AuthenticatedRequest } from '@/middleware/auth';
+import { query } from '@/config/database';
 
 // Mock data for states (in production, this would come from database)
 const states = [
@@ -26,59 +27,119 @@ const states = [
 // GET /api/states - List states with pagination and filters
 export const getStates = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      country, 
-      search, 
-      sortBy = 'name', 
-      sortOrder = 'asc' 
+    const {
+      page = 1,
+      limit = 20,
+      country,
+      search,
+      sortBy = 'name',
+      sortOrder = 'asc'
     } = req.query;
 
-    let filteredStates = [...states];
+    // Build SQL query with joins to get country names and city counts
+    let sql = `
+      SELECT
+        s.id,
+        s.name,
+        s.code,
+        co.name as country,
+        s.created_at as "createdAt",
+        s.updated_at as "updatedAt",
+        COALESCE(c.city_count, 0) as city_count
+      FROM states s
+      JOIN countries co ON s.country_id = co.id
+      LEFT JOIN (
+        SELECT state_id, COUNT(*) as city_count
+        FROM cities
+        GROUP BY state_id
+      ) c ON s.id = c.state_id
+      WHERE 1=1
+    `;
+
+    const params: any[] = [];
+    let paramCount = 0;
 
     // Apply filters
     if (country) {
-      filteredStates = filteredStates.filter(state => state.country === country);
+      paramCount++;
+      sql += ` AND co.name = $${paramCount}`;
+      params.push(country);
     }
+
     if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredStates = filteredStates.filter(state => 
-        state.name.toLowerCase().includes(searchTerm) ||
-        state.code.toLowerCase().includes(searchTerm)
-      );
+      paramCount++;
+      sql += ` AND (s.name ILIKE $${paramCount} OR s.code ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
     }
 
     // Apply sorting
-    filteredStates.sort((a, b) => {
-      const aValue = a[sortBy as keyof typeof a];
-      const bValue = b[sortBy as keyof typeof b];
-      
-      if (sortOrder === 'desc') {
-        return bValue > aValue ? 1 : -1;
-      }
-      return aValue > bValue ? 1 : -1;
-    });
+    const sortDirection = sortOrder === 'desc' ? 'DESC' : 'ASC';
+    const sortField = sortBy as string;
+
+    if (sortField === 'country') {
+      sql += ` ORDER BY co.name ${sortDirection}`;
+    } else {
+      sql += ` ORDER BY s.${sortField} ${sortDirection}`;
+    }
 
     // Apply pagination
-    const startIndex = ((page as number) - 1) * (limit as number);
-    const endIndex = startIndex + (limit as number);
-    const paginatedStates = filteredStates.slice(startIndex, endIndex);
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const offset = (pageNum - 1) * limitNum;
 
-    logger.info(`Retrieved ${paginatedStates.length} states`, { 
+    paramCount++;
+    sql += ` LIMIT $${paramCount}`;
+    params.push(limitNum);
+
+    paramCount++;
+    sql += ` OFFSET $${paramCount}`;
+    params.push(offset);
+
+    // Execute query
+    const result = await query(sql, params);
+
+    // Get total count for pagination
+    let countSql = `
+      SELECT COUNT(*)
+      FROM states s
+      JOIN countries co ON s.country_id = co.id
+      WHERE 1=1
+    `;
+    const countParams: any[] = [];
+    let countParamCount = 0;
+
+    if (country) {
+      countParamCount++;
+      countSql += ` AND co.name = $${countParamCount}`;
+      countParams.push(country);
+    }
+
+    if (search) {
+      countParamCount++;
+      countSql += ` AND (s.name ILIKE $${countParamCount} OR s.code ILIKE $${countParamCount})`;
+      countParams.push(`%${search}%`);
+    }
+
+    const countResult = await query<{ count: string }>(countSql, countParams);
+    const totalCount = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    logger.info(`Retrieved ${result.rows.length} states`, {
       userId: req.user?.id,
       filters: { country, search },
-      pagination: { page, limit }
+      pagination: { page: pageNum, limit: limitNum }
     });
 
     res.json({
       success: true,
-      data: paginatedStates,
+      data: result.rows,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total: filteredStates.length,
-        totalPages: Math.ceil(filteredStates.length / (limit as number)),
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        pages: totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
       },
     });
   } catch (error) {
